@@ -1,0 +1,868 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Compass,
+  Headphones,
+  MapPin,
+  Volume2,
+  Play,
+  Pause,
+  Square,
+  Sparkles,
+  UploadCloud,
+  CheckCircle2,
+  Radio,
+  EyeOff,
+  Navigation,
+  FileDown,
+  RotateCcw,
+  Wifi,
+  WifiOff
+} from 'lucide-react';
+import { get } from 'idb-keyval';
+
+import type { Coordinate, TrailManifest, WaypointTrigger } from '../../shared/types';
+import { MUIR_WOODS_GPX } from './data/muirWoodsSample';
+import {
+  unpackAndStoreBundle,
+  getCachedManifest,
+  clearCachedTour,
+  getStoredAudioBlob
+} from './services/zipService';
+import {
+  TrailSpatialEngine,
+  calculateDistanceMeters,
+  type TrailSpatialState
+} from './services/geofenceEngine';
+
+type AppScreenState = 'prep' | 'generating' | 'ready' | 'hiking';
+
+export default function App(): React.JSX.Element {
+  const [appState, setAppState] = useState<AppScreenState>('prep');
+  const [manifest, setManifest] = useState<TrailManifest | null>(null);
+  const [_currentCoord, setCurrentCoord] = useState<Coordinate | null>(null);
+  const [gpxData, setGpxData] = useState<string | null>(null);
+  const [trailName, setTrailName] = useState<string>('Muir Woods Redwood Sanctuary Trail');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [zipBlob, setZipBlob] = useState<Blob | null>(null);
+
+  const [genProgress, setGenProgress] = useState<number>(0);
+  const [genStage, setGenStage] = useState<string>('');
+
+  // Manual Preview State & Refs
+  const [currentlyPlayingId, setCurrentlyPlayingId] = useState<string | null>(null);
+  const [isPlayingTestAudio, setIsPlayingTestAudio] = useState<boolean>(false);
+  const [previewStatus, setPreviewStatus] = useState<string>('Ready to preview audio');
+  const [_activePoi, setActivePoi] = useState<string | null>(null);
+
+  const activeAudioRef = useRef<HTMLAudioElement>(new Audio());
+  const audioCacheRef = useRef<Map<string, string>>(new Map());
+  const manifestRef = useRef<TrailManifest | null>(manifest);
+
+  const [spatialState, setSpatialState] = useState<TrailSpatialState>({
+    currentPosition: null,
+    accuracyMeters: null,
+    nearestWaypoint: null,
+    distanceToNearestMeters: null,
+    isPlaying: false,
+    currentPlayingWaypoint: null,
+    lastTriggerTimes: new Map(),
+    isSimulating: false
+  });
+
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
+
+  const engineRef = useRef<TrailSpatialEngine | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  manifestRef.current = manifest;
+
+  useEffect(() => {
+    const handleOnline = (): void => setIsOnline(true);
+    const handleOffline = (): void => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    getCachedManifest().then((cached) => {
+      if (cached && cached.waypoints && cached.waypoints.length > 0) {
+        setManifest(cached);
+        setTrailName(cached.trail_name);
+        setAppState('ready');
+      }
+    });
+
+    const activeAudio = activeAudioRef.current;
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      if (engineRef.current) {
+        engineRef.current.destroy();
+      }
+      activeAudio.pause();
+      // Revoke created audio object URLs
+      for (const url of audioCacheRef.current.values()) {
+        URL.revokeObjectURL(url);
+      }
+      audioCacheRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (manifest) {
+      if (engineRef.current) {
+        engineRef.current.destroy();
+      }
+      engineRef.current = new TrailSpatialEngine(manifest);
+      const unsubscribe = engineRef.current.subscribe((state) => {
+        setSpatialState(state);
+        setCurrentCoord(state.currentPosition);
+      });
+      return () => unsubscribe();
+    }
+  }, [manifest]);
+
+  const handleLoadSample = (): void => {
+    setGpxData(MUIR_WOODS_GPX);
+    setTrailName('Muir Woods Redwood Sanctuary Trail');
+    setErrorMessage(null);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event: ProgressEvent<FileReader>): void => {
+      const content = event.target?.result;
+      if (typeof content === 'string') {
+        setGpxData(content);
+        const nameMatch = content.match(/<name>(.*?)<\/name>/i);
+        if (nameMatch && nameMatch[1]) {
+          setTrailName(nameMatch[1].trim());
+        } else {
+          setTrailName(file.name.replace(/\.gpx$/i, ''));
+        }
+        setErrorMessage(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleGenerateBundle = async (): Promise<void> => {
+    const payloadGpx = gpxData || MUIR_WOODS_GPX;
+    setAppState('generating');
+    setGenProgress(15);
+    setGenStage('Analyzing GPX topography & sampling 3–6 key trigger points...');
+    setErrorMessage(null);
+
+    try {
+      const formData = new FormData();
+      const gpxBlob = new Blob([payloadGpx], { type: 'application/gpx+xml' });
+      formData.append('gpx', gpxBlob, 'trail.gpx');
+
+      setGenProgress(35);
+      setGenStage('Querying OpenStreetMap Overpass for landmark POIs within 400m...');
+
+      await new Promise((r) => setTimeout(r, 600));
+      setGenProgress(55);
+      setGenStage('Gemma 2: Generating 45–60 word sensory field naturalist vignettes...');
+
+      const response = await fetch('/api/trail/bundle', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(errorData.error || `Server responded with HTTP ${response.status}`);
+      }
+
+      setGenProgress(80);
+      setGenStage('Synthesizing audio & packaging into streaming ZIP archive...');
+
+      const arrayBuffer = await response.arrayBuffer();
+      const zipBytes = new Uint8Array(arrayBuffer);
+      setZipBlob(new Blob([zipBytes], { type: 'application/zip' }));
+
+      setGenProgress(95);
+      setGenStage('Unpacking in RAM via fflate & caching audio into IndexedDB...');
+
+      const { manifest: unpackedManifest, audioBlobs } = await unpackAndStoreBundle(zipBytes);
+      setManifest(unpackedManifest);
+      setTrailName(unpackedManifest.trail_name);
+
+      // Pre-populate memory audio URL cache for immediate playback
+      for (const [key, blob] of audioBlobs.entries()) {
+        const url = URL.createObjectURL(blob);
+        audioCacheRef.current.set(key, url);
+      }
+
+      setGenProgress(100);
+      setGenStage('Tour bundle cached and 100% offline ready!');
+
+      await new Promise((r) => setTimeout(r, 500));
+      setAppState('ready');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to generate trail bundle.';
+      console.error('Bundle generation failed:', err);
+      setErrorMessage(message);
+      setAppState('prep');
+    }
+  };
+
+  /**
+   * Manual Test Play / Audio Preview Handler
+   */
+  const handleManualPlay = async (wp: WaypointTrigger): Promise<void> => {
+    // If the clicked waypoint is already playing, toggle pause
+    if (currentlyPlayingId === wp.id && !activeAudioRef.current.paused) {
+      activeAudioRef.current.pause();
+      setCurrentlyPlayingId(null);
+      setPreviewStatus(`Paused: ${wp.name}`);
+      return;
+    }
+
+    // Stop engine playback if active
+    if (engineRef.current) {
+      engineRef.current.stopAudio();
+    }
+
+    // Resolve audio URL from RAM cache or IndexedDB
+    let audioUrl =
+      audioCacheRef.current.get(wp.audio_file) || audioCacheRef.current.get(wp.id);
+
+    if (!audioUrl) {
+      const blob = (await get<Blob>(wp.audio_file)) || (await getStoredAudioBlob(wp.id));
+      if (blob instanceof Blob) {
+        audioUrl = URL.createObjectURL(blob);
+        audioCacheRef.current.set(wp.audio_file, audioUrl);
+        audioCacheRef.current.set(wp.id, audioUrl);
+      }
+    }
+
+    if (!audioUrl) {
+      setPreviewStatus(`Audio file not found for ${wp.name}`);
+      return;
+    }
+
+    activeAudioRef.current.src = audioUrl;
+    activeAudioRef.current.onended = (): void => {
+      setCurrentlyPlayingId(null);
+      setPreviewStatus('Preview finished.');
+    };
+
+    try {
+      await activeAudioRef.current.play();
+      setCurrentlyPlayingId(wp.id);
+      setActivePoi(wp.name);
+      setPreviewStatus(`Previewing: ${wp.name}`);
+
+      if ('mediaSession' in navigator && manifestRef.current) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: wp.name,
+          artist: 'TrailPulse (Preview Mode)',
+          album: manifestRef.current.trail_name
+        });
+      }
+    } catch (err: unknown) {
+      console.error('Playback error:', err);
+      setPreviewStatus(`Could not play audio: ${(err as Error).message}`);
+    }
+  };
+
+  /**
+   * Global Stop Audio Handler
+   */
+  const handleStopAudio = (): void => {
+    activeAudioRef.current.pause();
+    activeAudioRef.current.currentTime = 0;
+    setCurrentlyPlayingId(null);
+    setIsPlayingTestAudio(false);
+    setPreviewStatus('Audio stopped.');
+    if (engineRef.current) {
+      engineRef.current.stopAudio();
+    }
+  };
+
+  /**
+   * Test Play / Audio Preview Handler for Active Hiking View
+   */
+  const handleTestPlayAudio = async (): Promise<void> => {
+    if (!manifest) {
+      setPreviewStatus('No trail manifest loaded.');
+      return;
+    }
+
+    // Toggle pause if already playing
+    if (isPlayingTestAudio && !activeAudioRef.current.paused) {
+      activeAudioRef.current.pause();
+      setIsPlayingTestAudio(false);
+      setPreviewStatus('Audio paused.');
+      return;
+    }
+
+    // Stop engine playback if active
+    if (engineRef.current) {
+      engineRef.current.stopAudio();
+    }
+
+    // Target current active waypoint or default to waypoint 1
+    const targetWaypoint: WaypointTrigger | undefined =
+      spatialState.nearestWaypoint ||
+      spatialState.currentPlayingWaypoint ||
+      manifest.waypoints[0];
+
+    if (!targetWaypoint) {
+      setPreviewStatus('No waypoints found in manifest.');
+      return;
+    }
+
+    let audioUrl =
+      audioCacheRef.current.get(targetWaypoint.audio_file) ||
+      audioCacheRef.current.get(targetWaypoint.id);
+
+    // Fallback to IndexedDB if memory map lost reference
+    if (!audioUrl) {
+      const storedBlob =
+        (await get<Blob>(targetWaypoint.audio_file)) ||
+        (await getStoredAudioBlob(targetWaypoint.id));
+      if (storedBlob instanceof Blob) {
+        audioUrl = URL.createObjectURL(storedBlob);
+        audioCacheRef.current.set(targetWaypoint.audio_file, audioUrl);
+        audioCacheRef.current.set(targetWaypoint.id, audioUrl);
+      }
+    }
+
+    if (!audioUrl) {
+      setPreviewStatus(`Audio not found for ${targetWaypoint.name}.`);
+      return;
+    }
+
+    try {
+      activeAudioRef.current.src = audioUrl;
+      activeAudioRef.current.onended = (): void => {
+        setIsPlayingTestAudio(false);
+        setCurrentlyPlayingId(null);
+        setPreviewStatus(`Finished playing: ${targetWaypoint.name}`);
+      };
+
+      await activeAudioRef.current.play();
+      setIsPlayingTestAudio(true);
+      setCurrentlyPlayingId(targetWaypoint.id);
+      setActivePoi(targetWaypoint.name);
+      setPreviewStatus(`🔊 Playing: ${targetWaypoint.name}`);
+
+      // Update MediaSession for Bluetooth earbuds / lock screen
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: targetWaypoint.name,
+          artist: 'TrailPulse Narration',
+          album: manifest.trail_name
+        });
+      }
+    } catch (err: unknown) {
+      console.error('Playback failed:', err);
+      setIsPlayingTestAudio(false);
+      setPreviewStatus(`Audio playback failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleStartHiking = (): void => {
+    handleStopAudio();
+    if (engineRef.current) {
+      engineRef.current.startTracking();
+      if (manifest?.waypoints?.[0] && !spatialState.currentPosition) {
+        const wp = manifest.waypoints[0];
+        engineRef.current.simulatePosition(wp.lat, wp.lon, 5);
+      }
+    }
+    setAppState('hiking');
+  };
+
+  const handleExitHiking = (): void => {
+    if (engineRef.current) {
+      engineRef.current.stopTracking();
+      engineRef.current.stopAudio();
+    }
+    handleStopAudio();
+    setAppState('ready');
+  };
+
+  const handleResetTour = async (): Promise<void> => {
+    handleStopAudio();
+    if (engineRef.current) {
+      engineRef.current.destroy();
+    }
+    await clearCachedTour();
+    setManifest(null);
+    setZipBlob(null);
+    setGpxData(null);
+    setAppState('prep');
+  };
+
+  const handleDownloadZip = (): void => {
+    if (!zipBlob) return;
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${trailName.toLowerCase().replace(/\s+/g, '_')}_bundle.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="app-container">
+      {/* Header */}
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand-icon">
+            <Compass size={22} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <span className="brand-title">TrailPulse</span>
+              <span className="brand-tag">TypeScript</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="badge-offline">
+          {isOnline ? (
+            <>
+              <Wifi size={14} /> Wi-Fi Ready
+            </>
+          ) : (
+            <>
+              <WifiOff size={14} color="#4ade80" /> <span className="dot"></span> 100% Offline
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* Main Philosophy Banner */}
+      <div className="philosophy-banner">
+        <div className="icon-box">
+          <EyeOff size={20} />
+        </div>
+        <div>
+          <h3>Zero Screen-Time Outdoors</h3>
+          <p>
+            Generate your tour at home. When hiking, lock your screen and pocket your phone.
+            Spatial GPS triggers ambient naturalist vignettes directly into your earbuds.
+          </p>
+        </div>
+      </div>
+
+      {errorMessage && (
+        <div
+          style={{
+            background: '#3e1616',
+            border: '1px solid #7f1d1d',
+            color: '#fca5a5',
+            padding: '0.85rem',
+            borderRadius: '12px',
+            marginBottom: '1rem',
+            fontSize: '0.85rem'
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      {/* STATE 1: PREPARATION & UPLOAD */}
+      {appState === 'prep' && (
+        <div className="card">
+          <div className="card-title">
+            <span>1. Prepare Your Trail Tour</span>
+            <Sparkles size={18} color="#4ade80" />
+          </div>
+
+          <div
+            className="upload-zone"
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e: React.DragEvent<HTMLDivElement>) => e.preventDefault()}
+            onDrop={(e: React.DragEvent<HTMLDivElement>) => {
+              e.preventDefault();
+              const file = e.dataTransfer.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev: ProgressEvent<FileReader>) => {
+                  const content = ev.target?.result;
+                  if (typeof content === 'string') {
+                    setGpxData(content);
+                    setTrailName(file.name.replace(/\.gpx$/i, ''));
+                  }
+                };
+                reader.readAsText(file);
+              }
+            }}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".gpx"
+              style={{ display: 'none' }}
+              onChange={handleFileUpload}
+            />
+            <div className="upload-icon">
+              <UploadCloud size={38} />
+            </div>
+            <h4>{gpxData ? 'Custom GPX Loaded' : 'Upload GPX Trail File'}</h4>
+            <p>
+              {gpxData
+                ? `Selected: ${trailName} (${(gpxData.length / 1024).toFixed(1)} KB)`
+                : 'Drag & drop any hiking .gpx file here, or click to browse'}
+            </p>
+          </div>
+
+          <div style={{ textAlign: 'center', margin: '0.75rem 0', color: '#94a3b8', fontSize: '0.8rem' }}>
+            — OR QUICK TEST WITH SAMPLE ROUTE —
+          </div>
+
+          <button className="btn btn-secondary" onClick={handleLoadSample}>
+            <MapPin size={18} color="#4ade80" />
+            Load Sample: Muir Woods Redwood Trail (CA)
+          </button>
+
+          <div className="btn-group">
+            <button className="btn btn-primary btn-large" onClick={handleGenerateBundle}>
+              <Sparkles size={20} />
+              Generate Trail Bundle
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STATE 2: GENERATING BUNDLE */}
+      {appState === 'generating' && (
+        <div className="card">
+          <div className="card-title">
+            <span>Orchestrating Nature Tour</span>
+            <Radio size={18} color="#4ade80" className="animate-spin" />
+          </div>
+
+          <div className="progress-container">
+            <div className="progress-header">
+              <span>{genStage}</span>
+              <span>{genProgress}%</span>
+            </div>
+            <div className="progress-bar-bg">
+              <div className="progress-bar-fill" style={{ width: `${genProgress}%` }} />
+            </div>
+
+            <div className="progress-stages">
+              <div className={`stage-item ${genProgress >= 20 ? 'done' : 'active'}`}>
+                <CheckCircle2 size={16} /> GPX coordinate parsing & waypoint extraction
+              </div>
+              <div className={`stage-item ${genProgress >= 40 ? 'done' : genProgress >= 20 ? 'active' : ''}`}>
+                <CheckCircle2 size={16} /> OpenStreetMap Overpass landmark POI queries (400m)
+              </div>
+              <div className={`stage-item ${genProgress >= 65 ? 'done' : genProgress >= 40 ? 'active' : ''}`}>
+                <CheckCircle2 size={16} /> Gemma 2 sensory field naturalist vignettes (45–60 words)
+              </div>
+              <div className={`stage-item ${genProgress >= 85 ? 'done' : genProgress >= 65 ? 'active' : ''}`}>
+                <CheckCircle2 size={16} /> ElevenLabs voice synthesis & pure PCM WAV fallback
+              </div>
+              <div className={`stage-item ${genProgress >= 95 ? 'done' : genProgress >= 85 ? 'active' : ''}`}>
+                <CheckCircle2 size={16} /> In-memory ZIP packaging & IndexedDB storage
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STATE 3: READY TO HIKE & AUDIO PREVIEW CONTROLS */}
+      {appState === 'ready' && manifest && (
+        <div className="card">
+          <div className="card-title">
+            <span>2. Tour Cached & Ready</span>
+            <span style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 700 }}>
+              ✓ 100% Offline
+            </span>
+          </div>
+
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h2 style={{ fontSize: '1.25rem', color: '#fff', marginBottom: '0.2rem' }}>
+              {manifest.trail_name}
+            </h2>
+            <div style={{ display: 'flex', gap: '1rem', color: '#86efac', fontSize: '0.85rem' }}>
+              <span>📏 {manifest.total_distance_km.toFixed(2)} km</span>
+              <span>📍 {manifest.waypoints.length} Trigger Stops</span>
+              <span>⏱ ~1.5 - 2 hrs</span>
+            </div>
+          </div>
+
+          {/* Primary Outdoor Action Button */}
+          <div className="btn-group" style={{ marginBottom: '1.5rem' }}>
+            <button className="btn btn-primary btn-large" onClick={handleStartHiking}>
+              <Headphones size={22} />
+              Start Hiking (Screen Off)
+            </button>
+            <p style={{ fontSize: '0.78rem', color: '#94a3b8', textAlign: 'center', marginTop: '2px' }}>
+              Puts app into background GPS pocket mode with MediaSession earbud controls.
+            </p>
+          </div>
+
+          {/* DEDICATED AUDIO TOUR PREVIEW SECTION */}
+          <div className="preview-section">
+            <div className="preview-header">
+              <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Volume2 size={17} color="#38bdf8" /> Waypoint Audio Tour Preview
+              </span>
+              <span className="preview-badge">Desktop Test & Audio Preview</span>
+            </div>
+
+            {/* Active Status Banner */}
+            <div className={`preview-status-banner ${currentlyPlayingId ? 'active' : ''}`}>
+              <div className="preview-status-text">
+                {currentlyPlayingId ? (
+                  <div className="preview-equalizer">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                ) : (
+                  <Volume2 size={16} color="#94a3b8" />
+                )}
+                <span>{previewStatus}</span>
+              </div>
+              {currentlyPlayingId && (
+                <button className="btn-stop-audio" onClick={handleStopAudio}>
+                  <Square size={13} fill="currentColor" /> Stop Audio
+                </button>
+              )}
+            </div>
+
+            {/* Waypoint Preview Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              {manifest.waypoints.map((wp: WaypointTrigger, idx: number) => {
+                const isPlayingThis = currentlyPlayingId === wp.id;
+                const distanceMeters = spatialState.currentPosition
+                  ? calculateDistanceMeters(
+                      spatialState.currentPosition.lat,
+                      spatialState.currentPosition.lon,
+                      wp.lat,
+                      wp.lon
+                    )
+                  : null;
+
+                return (
+                  <div
+                    key={wp.id}
+                    className={`waypoint-card ${isPlayingThis ? 'is-playing' : ''}`}
+                  >
+                    <div className="waypoint-card-header">
+                      <div className="waypoint-title-group">
+                        <div className="waypoint-step-pill">{idx + 1}</div>
+                        <div>
+                          <div className="waypoint-card-title">{wp.name}</div>
+                          <div className="waypoint-badges">
+                            <span className="badge-pill">
+                              📍 {wp.lat.toFixed(4)}, {wp.lon.toFixed(4)}
+                            </span>
+                            <span className="badge-pill">
+                              🎯 {wp.trigger_radius_meters}m trigger
+                            </span>
+                            {distanceMeters !== null && (
+                              <span className="badge-pill badge-distance">
+                                🚶 {distanceMeters}m away
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {wp.transcript && (
+                      <div className="waypoint-transcript">
+                        "{wp.transcript}"
+                      </div>
+                    )}
+
+                    <button
+                      className={`btn-preview-play ${isPlayingThis ? 'playing' : ''}`}
+                      onClick={() => void handleManualPlay(wp)}
+                    >
+                      {isPlayingThis ? (
+                        <>
+                          <Pause size={16} fill="currentColor" /> Pause Preview
+                        </>
+                      ) : (
+                        <>
+                          <Play size={16} fill="currentColor" /> Play Preview
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Secondary Backup & Reset Actions */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
+            {zipBlob && (
+              <button className="btn btn-secondary" onClick={handleDownloadZip} style={{ flex: 1 }}>
+                <FileDown size={16} /> Backup ZIP
+              </button>
+            )}
+            <button className="btn btn-secondary" onClick={handleResetTour} style={{ flex: 1 }}>
+              <RotateCcw size={16} /> New Trail
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STATE 4: POCKET MODE / ACTIVE HIKE HUD */}
+      {appState === 'hiking' && (
+        <div className="pocket-mode">
+          <div className="screen-off-prompt">
+            <div className="radar-circle">
+              <Radio size={40} />
+            </div>
+            <h2>Put Phone in Your Pocket</h2>
+            <p>
+              TrailPulse is monitoring GPS in the background. Audio vignettes trigger automatically
+              through your earbuds within 25m of landmarks.
+            </p>
+
+            <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center' }}>
+              <div className="earbud-pill">
+                <Headphones size={16} color="#4ade80" />
+                <span>MediaSession & Bluetooth Earbuds Active</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Real-time Telemetry Grid */}
+          <div className="telemetry-grid">
+            <div className="telemetry-tile">
+              <div className="telemetry-label">GPS Coords</div>
+              <div className="telemetry-value">
+                {spatialState.currentPosition
+                  ? `${spatialState.currentPosition.lat.toFixed(4)}, ${spatialState.currentPosition.lon.toFixed(4)}`
+                  : 'Acquiring...'}
+              </div>
+              <div className="telemetry-sub">
+                Accuracy: ±{spatialState.accuracyMeters ?? '--'}m
+              </div>
+            </div>
+
+            <div className="telemetry-tile">
+              <div className="telemetry-label">Next Landmark</div>
+              <div className="telemetry-value" style={{ color: '#4ade80' }}>
+                {spatialState.distanceToNearestMeters !== null
+                  ? `${spatialState.distanceToNearestMeters}m`
+                  : '--'}
+              </div>
+              <div className="telemetry-sub">
+                {spatialState.nearestWaypoint ? spatialState.nearestWaypoint.name : 'Searching...'}
+              </div>
+            </div>
+          </div>
+
+          {/* Currently Playing / Last Triggered Story Card */}
+          {manifest && (spatialState.currentPlayingWaypoint || (isPlayingTestAudio && manifest.waypoints.length > 0)) && (
+            <div className="now-playing-card">
+              <div className="tag">
+                <Volume2 size={15} /> Now Playing into Earbuds
+              </div>
+              <h3>
+                {spatialState.currentPlayingWaypoint?.name ||
+                  (manifest.waypoints.find((w: WaypointTrigger) => w.id === currentlyPlayingId)?.name ?? manifest.waypoints[0]?.name)}
+              </h3>
+              <p>
+                "{spatialState.currentPlayingWaypoint?.transcript ||
+                  (manifest.waypoints.find((w: WaypointTrigger) => w.id === currentlyPlayingId)?.transcript ?? manifest.waypoints[0]?.transcript)}"
+              </p>
+              <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={handleStopAudio}
+                >
+                  <Pause size={14} /> Pause Audio
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Control Buttons */}
+          <div style={{ width: '100%', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              className={`btn ${isPlayingTestAudio ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={handleTestPlayAudio}
+              style={{ flex: 1, minWidth: '105px' }}
+            >
+              {isPlayingTestAudio ? (
+                <>
+                  <Pause size={16} /> Pause Audio
+                </>
+              ) : (
+                <>
+                  <Play size={16} /> Play Audio
+                </>
+              )}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                if (manifest?.waypoints?.[0]) {
+                  void handleManualPlay(manifest.waypoints[0]);
+                }
+              }}
+              style={{ flex: 1, minWidth: '105px' }}
+            >
+              <Volume2 size={16} /> Test Earbuds
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowSimPanel(!showSimPanel)}
+              style={{ flex: 1, minWidth: '105px' }}
+            >
+              <Navigation size={16} /> GPS Simulator
+            </button>
+          </div>
+
+          {/* Virtual Hiker / GPS Simulator Panel */}
+          {showSimPanel && manifest && (
+            <div className="sim-panel">
+              <h4>
+                <Navigation size={14} /> Hackathon GPS Simulator (Virtual Hiker)
+              </h4>
+              <p style={{ fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '0.75rem' }}>
+                Teleport virtual GPS near waypoints to verify spatial geofences (25m) and MediaSession playback:
+              </p>
+              <div className="sim-buttons">
+                {manifest.waypoints.map((wp: WaypointTrigger, idx: number) => (
+                  <button
+                    key={wp.id}
+                    className="sim-btn"
+                    onClick={() => {
+                      engineRef.current?.simulatePosition(wp.lat + 0.00008, wp.lon + 0.00008, 3);
+                    }}
+                  >
+                    Step to #{idx + 1}: {wp.name.slice(0, 18)}...
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button
+            className="btn btn-secondary"
+            onClick={handleExitHiking}
+            style={{ width: '100%', borderColor: '#475569', color: '#94a3b8' }}
+          >
+            End Hike & Return to Summary
+          </button>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="app-footer">
+        <p>TrailPulse • Built for Hacktoberfest 2026 "Touch Grass" Challenge</p>
+        <p style={{ marginTop: '0.2rem' }}>Zero Cloud Outdoors • Open-Weights Gemma 2 • ElevenLabs</p>
+      </footer>
+    </div>
+  );
+}
