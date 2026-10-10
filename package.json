@@ -9,14 +9,12 @@
     "server"
   ],
   "scripts": {
-    "build": "npm run build --prefix client && npm run build --prefix server",
-    "build:client": "npm run build --prefix client",
-    "build:server": "npm run build --prefix server",
+    "build": "npm run build --workspace=client && npm run build --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "build:server": "npm run build --workspace=server",
     "start": "node server/dist/server.js",
-    "install:all": "npm install --prefix client --legacy-peer-deps && npm install --prefix server --legacy-peer-deps",
-    "postinstall": "npm install --prefix client && npm install --prefix server",
-    "dev:server": "npm run --prefix server dev",
-    "dev:client": "npm run --prefix client dev",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
     "ollama": "ollama serve"
   },
   "keywords": [
