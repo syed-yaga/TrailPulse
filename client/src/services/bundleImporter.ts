@@ -138,7 +138,7 @@ export async function unpackTrailBundle(
       name: wp.name || `Waypoint ${idx + 1}`,
       lat: wp.lat ?? wp.latitude,
       lon: wp.lon ?? wp.longitude,
-      trigger_radius_meters: wp.trigger_radius_meters ?? wp.triggerRadiusMeters ?? 25,
+      trigger_radius_meters: Math.max(wp.trigger_radius_meters ?? wp.triggerRadiusMeters ?? 40, 40),
       audio_file: wp.audio_file || wp.audioFile || `audio/${wp.id || `wp_${idx + 1}`}.mp3`,
       transcript: wp.transcript || wp.description || '',
       cooldown_seconds: wp.cooldown_seconds ?? wp.cooldownSeconds ?? 600

@@ -138,7 +138,7 @@ app.post(
           name: landmarkName,
           lat: wp.coordinate.lat,
           lon: wp.coordinate.lon,
-          trigger_radius_meters: 25,
+          trigger_radius_meters: 40,
           audio_file: audioFilePath,
           transcript: script,
           cooldown_seconds: 600

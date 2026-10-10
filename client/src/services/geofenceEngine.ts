@@ -33,6 +33,8 @@ export interface TrailSpatialState {
   accuracyMeters: number | null;
   nearestWaypoint: WaypointTrigger | null;
   distanceToNearestMeters: number | null;
+  triggerRadiusMeters: number;
+  isTriggered: boolean;
   isPlaying: boolean;
   currentPlayingWaypoint: WaypointTrigger | null;
   lastTriggerTimes: Map<string, number>;
@@ -62,7 +64,7 @@ export class TrailSpatialEngine {
   constructor(manifest: TrailManifest, options: SpatialEngineOptions = {}) {
     this.manifest = manifest;
     this.options = {
-      defaultTriggerRadius: options.defaultTriggerRadius ?? 25,
+      defaultTriggerRadius: options.defaultTriggerRadius ?? 40,
       cooldownMs: options.cooldownMs ?? 600_000
     };
 
@@ -81,11 +83,19 @@ export class TrailSpatialEngine {
 
   public getState(): TrailSpatialState {
     const nearest = this.getNearestWaypoint();
+    const rawRadius = nearest
+      ? (nearest.waypoint.trigger_radius_meters ?? (nearest.waypoint as any).radius ?? this.options.defaultTriggerRadius)
+      : this.options.defaultTriggerRadius;
+    const triggerRadiusMeters = Math.max(rawRadius, 40);
+    const isTriggered = !!(nearest && nearest.distance <= triggerRadiusMeters);
+
     return {
       currentPosition: this.currentPosition,
       accuracyMeters: this.accuracyMeters,
       nearestWaypoint: nearest ? nearest.waypoint : null,
       distanceToNearestMeters: nearest ? nearest.distance : null,
+      triggerRadiusMeters,
+      isTriggered,
       isPlaying: this.isPlaying,
       currentPlayingWaypoint: this.currentPlayingWaypoint,
       lastTriggerTimes: new Map(this.lastTriggerTimes),
@@ -156,22 +166,28 @@ export class TrailSpatialEngine {
   }
 
   public unlockAudio(): void {
-    const silentBlob = new Blob(
-      [new Uint8Array([0xff, 0xfb, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00])],
-      { type: 'audio/mpeg' }
-    );
-    const silentUrl = URL.createObjectURL(silentBlob);
-    const audio = new Audio(silentUrl);
-    audio
-      .play()
-      .then(() => {
-        audio.pause();
-        URL.revokeObjectURL(silentUrl);
-      })
-      .catch(() => {});
+    try {
+      const silentDataUri =
+        'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+      this.audioElement.src = silentDataUri;
+      const playPromise = this.audioElement.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            this.audioElement.pause();
+            this.audioElement.currentTime = 0;
+          })
+          .catch((err) => {
+            console.warn('[TrailSpatialEngine] Audio unlock note:', err);
+          });
+      }
+    } catch (e) {
+      console.warn('[TrailSpatialEngine] Error unlocking audio:', e);
+    }
   }
 
   public startTracking(): void {
+    this.isSimulating = false;
     this.unlockAudio();
 
     if (!('geolocation' in navigator)) {
@@ -204,6 +220,11 @@ export class TrailSpatialEngine {
         timeout: 10000
       }
     );
+  }
+
+  public resumeSatelliteGPS(): void {
+    this.isSimulating = false;
+    this.notify();
   }
 
   public stopTracking(): void {
@@ -259,7 +280,8 @@ export class TrailSpatialEngine {
         wp.lon
       );
 
-      const radius = wp.trigger_radius_meters ?? this.options.defaultTriggerRadius;
+      const rawRadius = wp.trigger_radius_meters ?? (wp as any).radius ?? this.options.defaultTriggerRadius;
+      const radius = Math.max(rawRadius, 40);
       const cooldownMs = (wp.cooldown_seconds ?? 600) * 1000;
       const lastTrigger = this.lastTriggerTimes.get(wp.id) ?? 0;
 
@@ -274,7 +296,11 @@ export class TrailSpatialEngine {
 
   public async playWaypointAudio(waypoint: WaypointTrigger): Promise<void> {
     try {
-      const audioBlob = await getStoredAudioBlob(waypoint.id);
+      let audioBlob = await getStoredAudioBlob(waypoint.id);
+      if (!audioBlob && waypoint.audio_file) {
+        audioBlob = await getStoredAudioBlob(waypoint.audio_file);
+      }
+
       if (!audioBlob) {
         console.warn(`[TrailSpatialEngine] No cached audio for waypoint ${waypoint.id}`);
         return;

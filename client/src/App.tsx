@@ -65,6 +65,8 @@ export default function App(): React.JSX.Element {
     accuracyMeters: null,
     nearestWaypoint: null,
     distanceToNearestMeters: null,
+    triggerRadiusMeters: 40,
+    isTriggered: false,
     isPlaying: false,
     currentPlayingWaypoint: null,
     lastTriggerTimes: new Map(),
@@ -423,14 +425,58 @@ export default function App(): React.JSX.Element {
 
   const handleStartHiking = (): void => {
     handleStopAudio();
-    if (engineRef.current) {
-      engineRef.current.startTracking();
-      if (manifest?.waypoints?.[0] && !spatialState.currentPosition) {
-        const wp = manifest.waypoints[0];
-        engineRef.current.simulatePosition(wp.lat, wp.lon, 5);
+
+    // 1. Audio Autoplay Unlock: Immediately play and pause a silent audio buffer
+    // to unlock HTML5 audio permissions for future background triggers on mobile.
+    const silentWavUri =
+      'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.src = silentWavUri;
+        const playPromise = activeAudioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              activeAudioRef.current.pause();
+              activeAudioRef.current.currentTime = 0;
+            })
+            .catch((err) => {
+              console.warn('[App] activeAudioRef silent unlock note:', err);
+            });
+        }
+      } catch (err) {
+        console.warn('[App] activeAudioRef unlock error:', err);
       }
     }
+
+    // Unlock engine internal audio and start satellite tracking (no premature simulation)
+    if (engineRef.current) {
+      engineRef.current.unlockAudio();
+      engineRef.current.startTracking();
+    }
+
     setAppState('hiking');
+  };
+
+  const handleForcePlayNearest = async (): Promise<void> => {
+    const target = spatialState.nearestWaypoint || manifest?.waypoints?.[0];
+    if (!target) {
+      alert('No landmark waypoint available to play.');
+      return;
+    }
+
+    try {
+      console.log(`[HUD] Force playing waypoint audio: "${target.name}" (${target.id})`);
+      if (engineRef.current) {
+        await engineRef.current.playWaypointAudio(target);
+      } else {
+        await handleManualPlay(target);
+      }
+    } catch (err: unknown) {
+      console.error('[HUD] Force play error:', err);
+      alert(`Force play failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleExitHiking = (): void => {
@@ -824,7 +870,7 @@ export default function App(): React.JSX.Element {
             <h2>Put Phone in Your Pocket</h2>
             <p>
               TrailPulse is monitoring GPS in the background. Audio vignettes trigger automatically
-              through your earbuds within 25m of landmarks.
+              through your earbuds within 40m of landmarks.
             </p>
 
             <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center' }}>
@@ -835,30 +881,95 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Real-time Telemetry Grid */}
-          <div className="telemetry-grid">
-            <div className="telemetry-tile">
-              <div className="telemetry-label">GPS Coords</div>
-              <div className="telemetry-value">
-                {spatialState.currentPosition
-                  ? `${spatialState.currentPosition.lat.toFixed(4)}, ${spatialState.currentPosition.lon.toFixed(4)}`
-                  : 'Acquiring...'}
+          {/* STICKY LIVE GPS DEBUG HUD */}
+          <div className="debug-hud">
+            <div className="hud-header">
+              <div className="hud-title-badge">
+                <span className="hud-live-dot" />
+                <span className="hud-title-text">GPS LIVE DEBUG HUD</span>
               </div>
-              <div className="telemetry-sub">
-                Accuracy: ±{spatialState.accuracyMeters ?? '--'}m
+              <div
+                className={`hud-status-indicator ${
+                  spatialState.isPlaying
+                    ? 'status-playing'
+                    : spatialState.isTriggered
+                    ? 'status-triggered'
+                    : 'status-monitoring'
+                }`}
+              >
+                {spatialState.isPlaying
+                  ? '🔊 STATUS: PLAYING AUDIO'
+                  : spatialState.isTriggered
+                  ? '🎯 STATUS: TRIGGERED'
+                  : '📡 STATUS: MONITORING'}
               </div>
             </div>
 
-            <div className="telemetry-tile">
-              <div className="telemetry-label">Next Landmark</div>
-              <div className="telemetry-value" style={{ color: '#4ade80' }}>
-                {spatialState.distanceToNearestMeters !== null
-                  ? `${spatialState.distanceToNearestMeters}m`
-                  : '--'}
+            <div className="hud-grid">
+              <div className="hud-tile">
+                <div className="hud-label">Current GPS</div>
+                <div className="hud-val">
+                  {spatialState.currentPosition
+                    ? `${spatialState.currentPosition.lat.toFixed(5)}, ${spatialState.currentPosition.lon.toFixed(5)}`
+                    : 'Acquiring GPS fix...'}
+                </div>
+                <div className="hud-sub">
+                  Accuracy: {spatialState.accuracyMeters !== null ? `±${spatialState.accuracyMeters}m` : 'Detecting...'}
+                </div>
               </div>
-              <div className="telemetry-sub">
-                {spatialState.nearestWaypoint ? spatialState.nearestWaypoint.name : 'Searching...'}
+
+              <div className="hud-tile">
+                <div className="hud-label">Nearest Waypoint</div>
+                <div className="hud-val hud-highlight">
+                  {spatialState.nearestWaypoint ? spatialState.nearestWaypoint.name : 'Searching...'}
+                </div>
+                <div className="hud-sub">
+                  {spatialState.nearestWaypoint
+                    ? `${spatialState.nearestWaypoint.lat.toFixed(5)}, ${spatialState.nearestWaypoint.lon.toFixed(5)}`
+                    : 'Awaiting fix'}
+                </div>
               </div>
+
+              <div className="hud-tile">
+                <div className="hud-label">Distance Remaining</div>
+                <div className={`hud-val ${spatialState.isTriggered ? 'hud-val-triggered' : ''}`}>
+                  {spatialState.distanceToNearestMeters !== null
+                    ? `${spatialState.distanceToNearestMeters}m`
+                    : '--'}
+                </div>
+                <div className="hud-sub">Real-time distance</div>
+              </div>
+
+              <div className="hud-tile">
+                <div className="hud-label">Trigger Radius</div>
+                <div className="hud-val">
+                  {spatialState.triggerRadiusMeters || 40}m
+                </div>
+                <div className="hud-sub">
+                  {spatialState.isTriggered ? 'Target Within 40m' : 'Awaiting approach'}
+                </div>
+              </div>
+            </div>
+
+            <div className="hud-button-row">
+              <button
+                type="button"
+                className="btn-hud-force"
+                onClick={() => void handleForcePlayNearest()}
+                title="Verify cached audio exists in IndexedDB and plays through phone speakers"
+              >
+                <Volume2 size={16} /> Force Play Waypoint Audio
+              </button>
+              {spatialState.isSimulating && (
+                <button
+                  type="button"
+                  className="btn-hud-resume"
+                  onClick={() => engineRef.current?.resumeSatelliteGPS()}
+                  title="Return to real outdoor satellite GPS tracking"
+                >
+                  <Navigation size={14} /> Resume Satellite GPS
+                </button>
+              )}
             </div>
           </div>
 
@@ -932,7 +1043,7 @@ export default function App(): React.JSX.Element {
                 <Navigation size={14} /> Hackathon GPS Simulator (Virtual Hiker)
               </h4>
               <p style={{ fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '0.75rem' }}>
-                Teleport virtual GPS near waypoints to verify spatial geofences (25m) and MediaSession playback:
+                Teleport virtual GPS near waypoints to verify spatial geofences (40m) and MediaSession playback:
               </p>
               <div className="sim-buttons">
                 {manifest.waypoints.map((wp: WaypointTrigger, idx: number) => (
