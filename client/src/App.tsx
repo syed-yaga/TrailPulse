@@ -128,10 +128,7 @@ export default function App(): React.JSX.Element {
     setErrorMessage(null);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleGpxUpload = (file: File): void => {
     const reader = new FileReader();
     reader.onload = (event: ProgressEvent<FileReader>): void => {
       const content = event.target?.result;
@@ -147,6 +144,61 @@ export default function App(): React.JSX.Element {
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleLoadZipBundle = async (file: File): Promise<void> => {
+    setAppState('generating');
+    setGenProgress(25);
+    setGenStage('Opening offline tour ZIP bundle...');
+    setErrorMessage(null);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const zipBytes = new Uint8Array(arrayBuffer);
+      setZipBlob(file);
+
+      setGenProgress(65);
+      setGenStage('Unpacking manifest and audio vignettes into IndexedDB...');
+
+      const { manifest: unpackedManifest, audioBlobs } = await unpackAndStoreBundle(zipBytes);
+      setManifest(unpackedManifest);
+      setTrailName(unpackedManifest.trail_name);
+
+      // Pre-populate memory audio URL cache for immediate playback
+      for (const [key, blob] of audioBlobs.entries()) {
+        const url = URL.createObjectURL(blob);
+        audioCacheRef.current.set(key, url);
+      }
+
+      setGenProgress(100);
+      setGenStage('Tour bundle unpacked and 100% offline ready!');
+
+      await new Promise((r) => setTimeout(r, 400));
+      setAppState('ready');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to unpack ZIP bundle.';
+      console.error('ZIP bundle load failed:', err);
+      setErrorMessage(`Failed to load ZIP bundle: ${message}`);
+      setAppState('prep');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      // Route directly to the unzipper
+      handleLoadZipBundle(file);
+    } else if (file.name.toLowerCase().endsWith('.gpx')) {
+      // Route to GPX parser
+      handleGpxUpload(file);
+    } else {
+      alert('Please select a valid .gpx track or .zip tour bundle.');
+    }
+
+    // Reset input so re-uploading the same file works
+    e.target.value = '';
   };
 
   const handleGenerateBundle = async (): Promise<void> => {
@@ -486,33 +538,31 @@ export default function App(): React.JSX.Element {
               e.preventDefault();
               const file = e.dataTransfer.files?.[0];
               if (file) {
-                const reader = new FileReader();
-                reader.onload = (ev: ProgressEvent<FileReader>) => {
-                  const content = ev.target?.result;
-                  if (typeof content === 'string') {
-                    setGpxData(content);
-                    setTrailName(file.name.replace(/\.gpx$/i, ''));
-                  }
-                };
-                reader.readAsText(file);
+                if (file.name.toLowerCase().endsWith('.zip')) {
+                  handleLoadZipBundle(file);
+                } else if (file.name.toLowerCase().endsWith('.gpx')) {
+                  handleGpxUpload(file);
+                } else {
+                  alert('Please select a valid .gpx track or .zip tour bundle.');
+                }
               }
             }}
           >
             <input
               type="file"
               ref={fileInputRef}
-              accept=".gpx"
+              accept=".gpx,.zip,application/zip,application/x-zip-compressed,application/gpx+xml"
               style={{ display: 'none' }}
               onChange={handleFileUpload}
             />
             <div className="upload-icon">
               <UploadCloud size={38} />
             </div>
-            <h4>{gpxData ? 'Custom GPX Loaded' : 'Upload GPX Trail File'}</h4>
+            <h4>{gpxData ? 'Custom GPX Loaded' : 'Upload GPX Track or Tour ZIP'}</h4>
             <p>
               {gpxData
                 ? `Selected: ${trailName} (${(gpxData.length / 1024).toFixed(1)} KB)`
-                : 'Drag & drop any hiking .gpx file here, or click to browse'}
+                : 'Select or drop a .gpx route file or offline .zip tour bundle'}
             </p>
           </div>
 
