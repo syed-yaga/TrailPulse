@@ -16,7 +16,8 @@ import {
   FileDown,
   RotateCcw,
   Wifi,
-  WifiOff
+  WifiOff,
+  Archive
 } from 'lucide-react';
 import { get } from 'idb-keyval';
 
@@ -28,6 +29,7 @@ import {
   clearCachedTour,
   getStoredAudioBlob
 } from './services/zipService';
+import { unpackTrailBundle } from './services/bundleImporter';
 import {
   TrailSpatialEngine,
   calculateDistanceMeters,
@@ -73,7 +75,8 @@ export default function App(): React.JSX.Element {
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
 
   const engineRef = useRef<TrailSpatialEngine | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const gpxInputRef = useRef<HTMLInputElement | null>(null);
+  const zipInputRef = useRef<HTMLInputElement | null>(null);
 
   manifestRef.current = manifest;
 
@@ -146,58 +149,56 @@ export default function App(): React.JSX.Element {
     reader.readAsText(file);
   };
 
-  const handleLoadZipBundle = async (file: File): Promise<void> => {
+  const handleImportZipBundle = async (file: File): Promise<void> => {
     setAppState('generating');
-    setGenProgress(25);
-    setGenStage('Opening offline tour ZIP bundle...');
+    setGenProgress(20);
+    setGenStage('Reading archive in browser...');
     setErrorMessage(null);
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const zipBytes = new Uint8Array(arrayBuffer);
-      setZipBlob(file);
+      const unpackedManifest = await unpackTrailBundle(file, {
+        onProgress: (stage: string, percent: number): void => {
+          setGenStage(stage);
+          setGenProgress(percent);
+        }
+      });
 
-      setGenProgress(65);
-      setGenStage('Unpacking manifest and audio vignettes into IndexedDB...');
-
-      const { manifest: unpackedManifest, audioBlobs } = await unpackAndStoreBundle(zipBytes);
       setManifest(unpackedManifest);
       setTrailName(unpackedManifest.trail_name);
+      setZipBlob(file);
 
       // Pre-populate memory audio URL cache for immediate playback
-      for (const [key, blob] of audioBlobs.entries()) {
-        const url = URL.createObjectURL(blob);
-        audioCacheRef.current.set(key, url);
+      if (unpackedManifest.audioBlobs) {
+        for (const [key, blob] of unpackedManifest.audioBlobs.entries()) {
+          const url = URL.createObjectURL(blob);
+          audioCacheRef.current.set(key, url);
+        }
       }
 
       setGenProgress(100);
-      setGenStage('Tour bundle unpacked and 100% offline ready!');
+      setGenStage('Bundle ready! You can now start hiking offline.');
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 450));
       setAppState('ready');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to unpack ZIP bundle.';
-      console.error('ZIP bundle load failed:', err);
-      setErrorMessage(`Failed to load ZIP bundle: ${message}`);
+      const message = err instanceof Error ? err.message : 'Failed to import ZIP bundle.';
+      console.error('ZIP bundle import failed:', err);
+      setErrorMessage(message);
       setAppState('prep');
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>): void => {
+  const handleZipInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     if (!file) return;
+    handleImportZipBundle(file);
+    e.target.value = '';
+  };
 
-    if (file.name.toLowerCase().endsWith('.zip')) {
-      // Route directly to the unzipper
-      handleLoadZipBundle(file);
-    } else if (file.name.toLowerCase().endsWith('.gpx')) {
-      // Route to GPX parser
-      handleGpxUpload(file);
-    } else {
-      alert('Please select a valid .gpx track or .zip tour bundle.');
-    }
-
-    // Reset input so re-uploading the same file works
+  const handleGpxInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleGpxUpload(file);
     e.target.value = '';
   };
 
@@ -526,20 +527,71 @@ export default function App(): React.JSX.Element {
       {appState === 'prep' && (
         <div className="card">
           <div className="card-title">
-            <span>1. Prepare Your Trail Tour</span>
+            <span>1. Choose Trail Setup</span>
             <Sparkles size={18} color="#4ade80" />
           </div>
 
+          {/* PATHWAY 1: IMPORT PRE-GENERATED BUNDLE (100% OFFLINE) */}
+          <div
+            style={{
+              background: 'rgba(74, 222, 128, 0.05)',
+              border: '1px solid #285438',
+              borderRadius: '12px',
+              padding: '1.1rem',
+              marginBottom: '1.25rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.35rem' }}>
+              <Archive size={18} color="#4ade80" />
+              <strong style={{ color: '#fff', fontSize: '0.95rem' }}>Import Trail Bundle (.zip)</strong>
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  background: 'rgba(74, 222, 128, 0.2)',
+                  color: '#4ade80',
+                  padding: '2px 6px',
+                  borderRadius: '10px',
+                  fontWeight: 700
+                }}
+              >
+                100% OFFLINE
+              </span>
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 0.85rem 0', lineHeight: 1.4 }}>
+              Instantly unpack an already generated tour bundle in the browser with zero network calls. Ideal for mobile hiking.
+            </p>
+            <input
+              type="file"
+              ref={zipInputRef}
+              accept=".zip,application/zip,application/x-zip-compressed"
+              style={{ display: 'none' }}
+              onChange={handleZipInputChange}
+            />
+            <button
+              className="btn btn-secondary"
+              onClick={() => zipInputRef.current?.click()}
+              style={{ width: '100%', borderColor: '#4ade80' }}
+            >
+              <FileDown size={18} color="#4ade80" />
+              Import Trail Bundle (.zip)
+            </button>
+          </div>
+
+          <div style={{ textAlign: 'center', margin: '0.5rem 0 1rem 0', color: '#64748b', fontSize: '0.78rem', fontWeight: 600 }}>
+            ── OR CREATE NEW FROM GPX ──
+          </div>
+
+          {/* PATHWAY 2: CREATE NEW TRAIL (.gpx) */}
           <div
             className="upload-zone"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => gpxInputRef.current?.click()}
             onDragOver={(e: React.DragEvent<HTMLDivElement>) => e.preventDefault()}
             onDrop={(e: React.DragEvent<HTMLDivElement>) => {
               e.preventDefault();
               const file = e.dataTransfer.files?.[0];
               if (file) {
                 if (file.name.toLowerCase().endsWith('.zip')) {
-                  handleLoadZipBundle(file);
+                  handleImportZipBundle(file);
                 } else if (file.name.toLowerCase().endsWith('.gpx')) {
                   handleGpxUpload(file);
                 } else {
@@ -550,23 +602,23 @@ export default function App(): React.JSX.Element {
           >
             <input
               type="file"
-              ref={fileInputRef}
-              accept=".gpx,.zip,application/zip,application/x-zip-compressed,application/gpx+xml"
+              ref={gpxInputRef}
+              accept=".gpx,application/gpx+xml"
               style={{ display: 'none' }}
-              onChange={handleFileUpload}
+              onChange={handleGpxInputChange}
             />
             <div className="upload-icon">
-              <UploadCloud size={38} />
+              <UploadCloud size={34} />
             </div>
-            <h4>{gpxData ? 'Custom GPX Loaded' : 'Upload GPX Track or Tour ZIP'}</h4>
+            <h4>{gpxData ? 'Custom GPX Track Loaded' : 'Create New Trail (.gpx)'}</h4>
             <p>
               {gpxData
                 ? `Selected: ${trailName} (${(gpxData.length / 1024).toFixed(1)} KB)`
-                : 'Select or drop a .gpx route file or offline .zip tour bundle'}
+                : 'Upload a GPS route file to generate fresh AI narration & audio'}
             </p>
           </div>
 
-          <div style={{ textAlign: 'center', margin: '0.75rem 0', color: '#94a3b8', fontSize: '0.8rem' }}>
+          <div style={{ textAlign: 'center', margin: '0.65rem 0', color: '#94a3b8', fontSize: '0.8rem' }}>
             — OR QUICK TEST WITH SAMPLE ROUTE —
           </div>
 
@@ -575,7 +627,7 @@ export default function App(): React.JSX.Element {
             Load Sample: Muir Woods Redwood Trail (CA)
           </button>
 
-          <div className="btn-group">
+          <div className="btn-group" style={{ marginTop: '0.85rem' }}>
             <button className="btn btn-primary btn-large" onClick={handleGenerateBundle}>
               <Sparkles size={20} />
               Generate Trail Bundle

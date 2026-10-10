@@ -20,10 +20,10 @@ export async function unpackAndStoreBundle(
   const bytes = zipBuffer instanceof Uint8Array ? zipBuffer : new Uint8Array(zipBuffer);
   const unzipped = unzipSync(bytes);
 
-  // 1. Locate and parse trail_manifest.json
-  const manifestFile = unzipped['trail_manifest.json'];
+  // 1. Locate and parse manifest.json or trail_manifest.json
+  const manifestFile = unzipped['manifest.json'] || unzipped['trail_manifest.json'];
   if (!manifestFile) {
-    throw new Error('Invalid bundle: missing trail_manifest.json in archive');
+    throw new Error('Invalid bundle: missing manifest.json in archive');
   }
 
   const manifestJsonString = strFromU8(manifestFile);
@@ -44,9 +44,7 @@ export async function unpackAndStoreBundle(
       const mimeType = isMp3 ? 'audio/mpeg' : 'audio/wav';
       const audioBlob = new Blob([audioBytes], { type: mimeType });
 
-      const storageKey = `${AUDIO_KEY_PREFIX}${wp.id}`;
-      await set(storageKey, audioBlob);
-      await set(wp.audio_file, audioBlob);
+      await saveAudioBlob(wp.id, wp.audio_file, audioBlob);
       audioBlobs.set(wp.id, audioBlob);
       audioBlobs.set(wp.audio_file, audioBlob);
     } else {
@@ -55,9 +53,27 @@ export async function unpackAndStoreBundle(
   }
 
   // 4. Save active manifest
-  await set(MANIFEST_KEY, manifest);
+  await saveCachedManifest(manifest);
 
   return { manifest, audioBlobs };
+}
+
+/**
+ * Persists an audio Blob into IndexedDB with both id and audio_file keys.
+ */
+export async function saveAudioBlob(id: string, audioFile: string, blob: Blob): Promise<void> {
+  const storageKey = `${AUDIO_KEY_PREFIX}${id}`;
+  await set(storageKey, blob);
+  if (audioFile) {
+    await set(audioFile, blob);
+  }
+}
+
+/**
+ * Saves the active trail manifest to IndexedDB.
+ */
+export async function saveCachedManifest(manifest: TrailManifest): Promise<void> {
+  await set(MANIFEST_KEY, manifest);
 }
 
 /**

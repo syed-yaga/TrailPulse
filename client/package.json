@@ -11,10 +11,10 @@
   "dependencies": {
     "fflate": "^0.8.2",
     "idb-keyval": "^6.2.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "trailpulse": "file:.."
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.9",
