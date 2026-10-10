@@ -13,7 +13,7 @@
     "build:client": "npm run build --prefix client",
     "build:server": "npm run build --prefix server",
     "start": "node server/dist/server.js",
-    "install:all": "npm install --prefix client && npm install --prefix server",
+    "install:all": "npm install --prefix client --legacy-peer-deps && npm install --prefix server --legacy-peer-deps",
     "postinstall": "npm install --prefix client && npm install --prefix server",
     "dev:server": "npm run --prefix server dev",
     "dev:client": "npm run --prefix client dev",
