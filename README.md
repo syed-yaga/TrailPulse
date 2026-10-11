@@ -128,7 +128,7 @@ npm install
 
 ### 2. Run Local Development
 
-# Terminal 1 (Frontend):
+Terminal 1 (Frontend):
 
 ```bash
 npm run dev:client
@@ -136,7 +136,7 @@ npm run dev:client
 
 ### 3. Start the Server
 
-# Terminal 2 (Backend):
+Terminal 2 (Backend):
 
 ```bash
 npm run dev:server
