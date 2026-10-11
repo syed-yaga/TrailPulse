@@ -3,7 +3,7 @@
 > **"Touch Grass, Screen Off"**: A zero-screen-time nature audio guide for Hacktoberfest 2026. Hikers prepare a trail tour at home, then hike with their phone locked in their pocket while spatial background GPS triggers ambient naturalist audio vignettes directly through wireless earbuds.
 
 [![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-2026%20Touch%20Grass-brightgreen)](https://hacktoberfest.com/)
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-trailpulse.onrender.com-10b981?style=for-the-badge&logo=render)](https://trailpulse.onrender.com)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-trailpulse.onrender.com-10b981?logo=render)](https://trailpulse.onrender.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![PWA Ready](https://img.shields.io/badge/PWA-100%25%20Offline%20Ready-green)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 [![Open Weights: Gemma 2](<https://img.shields.io/badge/AI-Gemma%202%20(9B)-blue>)](https://ai.google.dev/gemma)
