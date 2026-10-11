@@ -74,6 +74,8 @@ export default function App(): React.JSX.Element {
   const [spatialState, setSpatialState] = useState<TrailSpatialState>({
     currentPosition: null,
     accuracyMeters: null,
+    targetWaypoint: null,
+    distanceToTargetMeters: null,
     nearestWaypoint: null,
     distanceToNearestMeters: null,
     triggerRadiusMeters: 40,
@@ -81,6 +83,8 @@ export default function App(): React.JSX.Element {
     isPlaying: false,
     currentPlayingWaypoint: null,
     lastTriggerTimes: new Map(),
+    visitedWaypointIds: new Set(),
+    isTargetCompleted: false,
     isSimulating: false,
   });
 
@@ -415,6 +419,7 @@ export default function App(): React.JSX.Element {
 
     // Target current active waypoint or default to waypoint 1
     const targetWaypoint: WaypointTrigger | undefined =
+      spatialState.targetWaypoint ||
       spatialState.nearestWaypoint ||
       spatialState.currentPlayingWaypoint ||
       manifest.waypoints[0];
@@ -457,7 +462,7 @@ export default function App(): React.JSX.Element {
       setIsPlayingTestAudio(true);
       setCurrentlyPlayingId(targetWaypoint.id);
       setActivePoi(targetWaypoint.name);
-      setPreviewStatus(`🔊 Playing: ${targetWaypoint.name}`);
+      setPreviewStatus(`Playing: ${targetWaypoint.name}`);
 
       // Update MediaSession for Bluetooth earbuds / lock screen
       if ("mediaSession" in navigator) {
@@ -511,7 +516,10 @@ export default function App(): React.JSX.Element {
   };
 
   const handleForcePlayNearest = async (): Promise<void> => {
-    const target = spatialState.nearestWaypoint || manifest?.waypoints?.[0];
+    const target =
+      spatialState.targetWaypoint ||
+      spatialState.nearestWaypoint ||
+      manifest?.waypoints?.[0];
     if (!target) {
       alert("No landmark waypoint available to play.");
       return;
@@ -519,7 +527,7 @@ export default function App(): React.JSX.Element {
 
     try {
       console.log(
-        `[HUD] Force playing waypoint audio: "${target.name}" (${target.id})`,
+        `[HUD] Force playing target waypoint audio: "${target.name}" (${target.id})`,
       );
       if (engineRef.current) {
         await engineRef.current.playWaypointAudio(target);
@@ -546,6 +554,7 @@ export default function App(): React.JSX.Element {
   const handleResetTour = async (): Promise<void> => {
     handleStopAudio();
     if (engineRef.current) {
+      engineRef.current.resetVisited();
       engineRef.current.destroy();
     }
     await clearCachedTour();
@@ -630,7 +639,7 @@ export default function App(): React.JSX.Element {
         <div className="card">
           <div className="card-title">
             <span>1. Choose Trail Setup</span>
-            <Sparkles size={18} color="#4ade80" />
+            {/* <Sparkles size={18} color="#4ade80" /> */}
           </div>
 
           {/* 1-CLICK CURATED SAMPLE TRAILS (FEATURED FOR JUDGES & CONTRIBUTORS) */}
@@ -788,7 +797,6 @@ export default function App(): React.JSX.Element {
               className="btn btn-primary btn-large"
               onClick={handleGenerateBundle}
             >
-              <Sparkles size={20} />
               Generate Trail Bundle
             </button>
           </div>
@@ -881,9 +889,9 @@ export default function App(): React.JSX.Element {
                 fontSize: "0.85rem",
               }}
             >
-              <span>📏 {manifest.total_distance_km.toFixed(2)} km</span>
-              <span>📍 {manifest.waypoints.length} Trigger Stops</span>
-              <span>⏱ ~1.5 - 2 hrs</span>
+              <span> {manifest.total_distance_km.toFixed(2)} km</span>
+              <span> {manifest.waypoints.length} Trigger Stops</span>
+              <span> ~1.5 - 2 hrs</span>
             </div>
           </div>
 
@@ -985,14 +993,14 @@ export default function App(): React.JSX.Element {
                           <div className="waypoint-card-title">{wp.name}</div>
                           <div className="waypoint-badges">
                             <span className="badge-pill">
-                              📍 {wp.lat.toFixed(4)}, {wp.lon.toFixed(4)}
+                              {wp.lat.toFixed(4)}, {wp.lon.toFixed(4)}
                             </span>
                             <span className="badge-pill">
-                              🎯 {wp.trigger_radius_meters}m trigger
+                              {wp.trigger_radius_meters}m trigger
                             </span>
                             {distanceMeters !== null && (
                               <span className="badge-pill badge-distance">
-                                🚶 {distanceMeters}m away
+                                {distanceMeters}m away
                               </span>
                             )}
                           </div>
@@ -1089,14 +1097,18 @@ export default function App(): React.JSX.Element {
                     ? "status-playing"
                     : spatialState.isTriggered
                       ? "status-triggered"
-                      : "status-monitoring"
+                      : spatialState.isTargetCompleted
+                        ? "status-completed"
+                        : "status-monitoring"
                 }`}
               >
                 {spatialState.isPlaying
-                  ? "🔊 STATUS: PLAYING AUDIO"
+                  ? " STATUS: PLAYING AUDIO"
                   : spatialState.isTriggered
-                    ? "🟢 STATUS: TRIGGERED"
-                    : "📡 STATUS: MONITORING"}
+                    ? " STATUS: TRIGGERED"
+                    : spatialState.isTargetCompleted
+                      ? " STATUS: TOUR COMPLETED"
+                      : " STATUS: MONITORING"}
               </div>
             </div>
 
@@ -1117,29 +1129,45 @@ export default function App(): React.JSX.Element {
               </div>
 
               <div className="hud-tile">
-                <div className="hud-label">Nearest Waypoint</div>
+                <div className="hud-label">Target Waypoint</div>
                 <div className="hud-val hud-highlight">
-                  {spatialState.nearestWaypoint
-                    ? spatialState.nearestWaypoint.name
-                    : "Searching..."}
+                  {spatialState.targetWaypoint
+                    ? spatialState.targetWaypoint.name
+                    : spatialState.nearestWaypoint
+                      ? spatialState.nearestWaypoint.name
+                      : spatialState.isTargetCompleted
+                        ? "All Trail Stops Visited"
+                        : "Searching..."}
                 </div>
                 <div className="hud-sub">
-                  {spatialState.nearestWaypoint
-                    ? `${spatialState.nearestWaypoint.lat.toFixed(5)}, ${spatialState.nearestWaypoint.lon.toFixed(5)}`
-                    : "Awaiting fix"}
+                  {spatialState.targetWaypoint
+                    ? `${spatialState.targetWaypoint.lat.toFixed(5)}, ${spatialState.targetWaypoint.lon.toFixed(5)}`
+                    : spatialState.nearestWaypoint
+                      ? `${spatialState.nearestWaypoint.lat.toFixed(5)}, ${spatialState.nearestWaypoint.lon.toFixed(5)}`
+                      : spatialState.isTargetCompleted
+                        ? "Tour sequence finished"
+                        : "Awaiting fix"}
                 </div>
               </div>
 
               <div className="hud-tile">
-                <div className="hud-label">Distance Remaining</div>
+                <div className="hud-label">Distance to Target</div>
                 <div
                   className={`hud-val ${spatialState.isTriggered ? "hud-val-triggered" : ""}`}
                 >
-                  {spatialState.distanceToNearestMeters !== null
-                    ? `${spatialState.distanceToNearestMeters}m`
-                    : "--"}
+                  {spatialState.distanceToTargetMeters !== null
+                    ? `${spatialState.distanceToTargetMeters}m`
+                    : spatialState.distanceToNearestMeters !== null
+                      ? `${spatialState.distanceToNearestMeters}m`
+                      : "--"}
                 </div>
-                <div className="hud-sub">Real-time distance</div>
+                <div className="hud-sub">
+                  {spatialState.isTriggered
+                    ? "Target Reached (Inside Zone)"
+                    : spatialState.isTargetCompleted
+                      ? "All Trail Stops Visited"
+                      : `Approaching (Triggers at ≤ ${spatialState.triggerRadiusMeters || 40}m)`}
+                </div>
               </div>
 
               <div className="hud-tile">
@@ -1149,7 +1177,7 @@ export default function App(): React.JSX.Element {
                 </div>
                 <div className="hud-sub">
                   {spatialState.isTriggered
-                    ? "Target Within 40m"
+                    ? "Inside Trigger Zone"
                     : "Awaiting approach"}
                 </div>
               </div>

@@ -950,6 +950,13 @@ body {
   box-shadow: 0 0 14px rgba(96, 165, 250, 0.5);
 }
 
+.hud-status-indicator.status-completed {
+  background: #1e3a8a;
+  color: #bfdbfe;
+  border: 1px solid #60a5fa;
+  font-weight: 800;
+}
+
 /* 2. Responsive Stats Grid: 1 column on mobile, 2 columns on >= 520px */
 .hud-grid {
   display: grid;
@@ -1187,12 +1194,13 @@ body {
   gap: 0.75rem;
   width: 100%;
   margin-bottom: 0.85rem;
+  min-width: 0;
 }
 
-@media (min-width: 540px) {
+@media (min-width: 480px) {
   .sample-trails-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
+    gap: 0.65rem;
   }
 }
 
@@ -1203,13 +1211,14 @@ body {
   background: #092015;
   border: 1px solid #1a4d33;
   border-radius: var(--radius-md, 12px);
-  padding: 0.9rem;
+  padding: 0.85rem;
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
   min-width: 0;
   box-sizing: border-box;
   outline: none;
+  overflow: hidden;
 }
 
 .sample-trail-card:hover {
@@ -1290,35 +1299,48 @@ body {
 
 .sample-trail-footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.55rem;
   margin-top: auto;
-  padding-top: 0.6rem;
+  padding-top: 0.65rem;
   border-top: 1px solid rgba(30, 74, 51, 0.6);
-  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .sample-trail-stops-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 0.74rem;
   color: #a7f3d0;
   font-weight: 700;
-  white-space: nowrap;
+  width: 100%;
+}
+
+.sample-trail-duration-tag {
+  font-size: 0.7rem;
+  color: #fbbf24;
+  font-weight: 600;
 }
 
 .btn-sample-load {
+  width: 100%;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 800;
-  padding: 6px 12px;
+  padding: 8px 12px;
   background: #15803d;
   color: #ffffff;
   border: 1px solid #22c55e;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
-  white-space: nowrap;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .btn-sample-load:hover:not(:disabled) {

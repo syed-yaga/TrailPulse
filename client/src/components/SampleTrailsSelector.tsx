@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
-import { MapPin, Sparkles, Navigation, Loader2, ArrowRight } from 'lucide-react';
-import { SAMPLE_TRAILS, type SampleTrail } from '../data/sampleTrails';
+import React, { useState } from "react";
+import {
+  MapPin,
+  Navigation,
+  Loader2,
+  ArrowRight,
+  Sparkles,
+} from "lucide-react";
+import { SAMPLE_TRAILS, type SampleTrail } from "../data/sampleTrails";
 
 export interface SampleTrailsSelectorProps {
   onLoadBundleFile: (file: File, trail: SampleTrail) => Promise<void> | void;
@@ -9,7 +15,7 @@ export interface SampleTrailsSelectorProps {
 
 export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
   onLoadBundleFile,
-  disabled = false
+  disabled = false,
 }) => {
   const [loadingTrailId, setLoadingTrailId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -21,22 +27,27 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
     setErrorMessage(null);
 
     try {
-      console.log(`[SampleTrails] Fetching pre-packaged trail bundle: ${trail.bundleUrl}`);
+      console.log(
+        `[SampleTrails] Fetching pre-packaged trail bundle: ${trail.bundleUrl}`,
+      );
       const response = await fetch(trail.bundleUrl);
 
       if (!response.ok) {
-        throw new Error(`Failed to download demo bundle (${response.status}: ${response.statusText})`);
+        throw new Error(
+          `Failed to download demo bundle (${response.status}: ${response.statusText})`,
+        );
       }
 
       const blob = await response.blob();
       const bundleFile = new File([blob], `${trail.id}.zip`, {
-        type: 'application/zip'
+        type: "application/zip",
       });
 
       await onLoadBundleFile(bundleFile, trail);
     } catch (err: unknown) {
-      console.error('[SampleTrails] Error loading sample bundle:', err);
-      const msg = err instanceof Error ? err.message : 'Failed to load sample trail.';
+      console.error("[SampleTrails] Error loading sample bundle:", err);
+      const msg =
+        err instanceof Error ? err.message : "Failed to load sample trail.";
       setErrorMessage(msg);
       alert(`Could not load sample trail: ${msg}`);
     } finally {
@@ -53,13 +64,14 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
           <span className="sample-trials-badge-fast">60s TEST</span>
         </div>
         <p className="sample-trails-subtitle">
-          Instant offline-ready tours with studio narration. No GPX files or API keys required.
+          Instant offline-ready tours with studio narration. No GPX files or API
+          keys required.
         </p>
       </div>
 
       {errorMessage && (
         <div className="sample-trails-error">
-          <span>⚠️ {errorMessage}</span>
+          <span> {errorMessage}</span>
         </div>
       )}
 
@@ -70,12 +82,12 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
           return (
             <div
               key={trail.id}
-              className={`sample-trail-card ${isLoading ? 'is-loading' : ''}`}
+              className={`sample-trail-card ${isLoading ? "is-loading" : ""}`}
               onClick={() => void handleSelectTrail(trail)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   void handleSelectTrail(trail);
                 }
@@ -92,7 +104,7 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
 
                 <div className="sample-trail-badges">
                   <span className="badge-pill-unesco">{trail.badge}</span>
-                  <span className="badge-pill-quick">⚡ {trail.duration}</span>
+                  <span className="badge-pill-quick"> {trail.duration}</span>
                 </div>
               </div>
 
@@ -100,7 +112,10 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
 
               <div className="sample-trail-footer">
                 <div className="sample-trail-stops-meta">
-                  <span>📍 {trail.stopsCount} stops</span>
+                  <span> {trail.stopsCount} stops</span>
+                  <span className="sample-trail-duration-tag">
+                    {trail.duration}
+                  </span>
                 </div>
 
                 <button
@@ -133,8 +148,9 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
       <div className="judge-tip-box">
         <Navigation size={14} className="judge-tip-icon" />
         <span>
-          <strong>Tip for Judges:</strong> After loading, tap <em>"GPS Simulator"</em> to test real
-          audio vignettes in under a minute without walking.
+          <strong>Tip for Judges:</strong> After loading, tap{" "}
+          <em>"GPS Simulator"</em> to test real audio vignettes in under a
+          minute without walking.
         </span>
       </div>
     </div>

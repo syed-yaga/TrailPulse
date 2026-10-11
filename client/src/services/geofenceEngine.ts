@@ -31,6 +31,8 @@ export interface SpatialEngineOptions {
 export interface TrailSpatialState {
   currentPosition: Coordinate | null;
   accuracyMeters: number | null;
+  targetWaypoint: WaypointTrigger | null;
+  distanceToTargetMeters: number | null;
   nearestWaypoint: WaypointTrigger | null;
   distanceToNearestMeters: number | null;
   triggerRadiusMeters: number;
@@ -38,6 +40,8 @@ export interface TrailSpatialState {
   isPlaying: boolean;
   currentPlayingWaypoint: WaypointTrigger | null;
   lastTriggerTimes: Map<string, number>;
+  visitedWaypointIds: Set<string>;
+  isTargetCompleted: boolean;
   isSimulating: boolean;
 }
 
@@ -55,6 +59,7 @@ export class TrailSpatialEngine {
   private currentPosition: Coordinate | null = null;
   private accuracyMeters: number | null = null;
   private lastTriggerTimes: Map<string, number> = new Map();
+  private visitedWaypointIds: Set<string> = new Set();
   private isPlaying: boolean = false;
   private currentPlayingWaypoint: WaypointTrigger | null = null;
   private isSimulating: boolean = false;
@@ -82,23 +87,41 @@ export class TrailSpatialEngine {
   }
 
   public getState(): TrailSpatialState {
-    const nearest = this.getNearestWaypoint();
-    const rawRadius = nearest
-      ? (nearest.waypoint.trigger_radius_meters ?? (nearest.waypoint as any).radius ?? this.options.defaultTriggerRadius)
+    const targetInfo = this.getActiveTargetWaypoint();
+    const targetWp = targetInfo ? targetInfo.waypoint : null;
+    const distanceToTarget = targetInfo && this.currentPosition ? targetInfo.distance : null;
+
+    const rawRadius = targetWp
+      ? (targetWp.trigger_radius_meters ?? (targetWp as any).radius ?? this.options.defaultTriggerRadius)
       : this.options.defaultTriggerRadius;
     const triggerRadiusMeters = Math.max(rawRadius, 40);
-    const isTriggered = !!(nearest && nearest.distance <= triggerRadiusMeters);
+
+    // Proximity Trigger Condition MUST be: distance <= radius on an unvisited target
+    const isInsideRadius = !!(
+      targetWp &&
+      distanceToTarget !== null &&
+      distanceToTarget <= triggerRadiusMeters &&
+      !this.visitedWaypointIds.has(targetWp.id)
+    );
+
+    const isAllCompleted =
+      this.manifest.waypoints.length > 0 &&
+      this.manifest.waypoints.every((w) => this.visitedWaypointIds.has(w.id));
 
     return {
       currentPosition: this.currentPosition,
       accuracyMeters: this.accuracyMeters,
-      nearestWaypoint: nearest ? nearest.waypoint : null,
-      distanceToNearestMeters: nearest ? nearest.distance : null,
+      targetWaypoint: targetWp,
+      distanceToTargetMeters: distanceToTarget,
+      nearestWaypoint: targetWp,
+      distanceToNearestMeters: distanceToTarget,
       triggerRadiusMeters,
-      isTriggered,
+      isTriggered: isInsideRadius,
       isPlaying: this.isPlaying,
       currentPlayingWaypoint: this.currentPlayingWaypoint,
       lastTriggerTimes: new Map(this.lastTriggerTimes),
+      visitedWaypointIds: new Set(this.visitedWaypointIds),
+      isTargetCompleted: isAllCompleted,
       isSimulating: this.isSimulating
     };
   }
@@ -242,28 +265,50 @@ export class TrailSpatialEngine {
     this.notify();
   }
 
-  public getNearestWaypoint(): { waypoint: WaypointTrigger; distance: number } | null {
-    if (!this.currentPosition || !this.manifest.waypoints || this.manifest.waypoints.length === 0) {
+  public getActiveTargetWaypoint(): { waypoint: WaypointTrigger; distance: number } | null {
+    if (!this.manifest.waypoints || this.manifest.waypoints.length === 0) {
       return null;
     }
 
-    let nearest: WaypointTrigger | null = null;
-    let minDistance = Infinity;
+    // Target the first unvisited waypoint in trail sequence to measure approach instead of departure
+    const unvisited = this.manifest.waypoints.filter(
+      (wp) => !this.visitedWaypointIds.has(wp.id)
+    );
+    const target = unvisited.length > 0 ? unvisited[0] : null;
 
-    for (const wp of this.manifest.waypoints) {
-      const dist = calculateDistanceMeters(
-        this.currentPosition.lat,
-        this.currentPosition.lon,
-        wp.lat,
-        wp.lon
-      );
-      if (dist < minDistance) {
-        minDistance = dist;
-        nearest = wp;
-      }
+    if (!target) {
+      return null;
     }
 
-    return nearest ? { waypoint: nearest, distance: minDistance } : null;
+    const distance = this.currentPosition
+      ? calculateDistanceMeters(
+          this.currentPosition.lat,
+          this.currentPosition.lon,
+          target.lat,
+          target.lon
+        )
+      : 0;
+
+    return { waypoint: target, distance };
+  }
+
+  public getNearestWaypoint(): { waypoint: WaypointTrigger; distance: number } | null {
+    return this.getActiveTargetWaypoint();
+  }
+
+  public getVisitedWaypointIds(): Set<string> {
+    return new Set(this.visitedWaypointIds);
+  }
+
+  public markWaypointVisited(waypointId: string): void {
+    this.visitedWaypointIds.add(waypointId);
+    this.notify();
+  }
+
+  public resetVisited(): void {
+    this.visitedWaypointIds.clear();
+    this.lastTriggerTimes.clear();
+    this.notify();
   }
 
   public async checkGeofences(): Promise<void> {
@@ -271,8 +316,12 @@ export class TrailSpatialEngine {
     if (this.isPlaying) return;
 
     const now = Date.now();
+    // Only evaluate unvisited waypoints so past waypoints are not re-triggered
+    const unvisited = this.manifest.waypoints.filter(
+      (wp) => !this.visitedWaypointIds.has(wp.id)
+    );
 
-    for (const wp of this.manifest.waypoints) {
+    for (const wp of unvisited) {
       const distance = calculateDistanceMeters(
         this.currentPosition.lat,
         this.currentPosition.lon,
@@ -280,13 +329,18 @@ export class TrailSpatialEngine {
         wp.lon
       );
 
-      const rawRadius = wp.trigger_radius_meters ?? (wp as any).radius ?? this.options.defaultTriggerRadius;
+      const rawRadius =
+        wp.trigger_radius_meters ?? (wp as any).radius ?? this.options.defaultTriggerRadius;
       const radius = Math.max(rawRadius, 40);
       const cooldownMs = (wp.cooldown_seconds ?? 600) * 1000;
       const lastTrigger = this.lastTriggerTimes.get(wp.id) ?? 0;
 
+      // Proximity Trigger Condition: distance <= radius on an unvisited target
       if (distance <= radius && now - lastTrigger > cooldownMs) {
-        console.log(`[TrailSpatialEngine] Triggering "${wp.name}" (${distance}m <= ${radius}m)`);
+        console.log(
+          `[TrailSpatialEngine] Triggering "${wp.name}" (${distance}m <= ${radius}m threshold)`
+        );
+        this.visitedWaypointIds.add(wp.id);
         this.lastTriggerTimes.set(wp.id, now);
         await this.playWaypointAudio(wp);
         break;
@@ -296,6 +350,9 @@ export class TrailSpatialEngine {
 
   public async playWaypointAudio(waypoint: WaypointTrigger): Promise<void> {
     try {
+      this.visitedWaypointIds.add(waypoint.id);
+      this.lastTriggerTimes.set(waypoint.id, Date.now());
+
       let audioBlob = await getStoredAudioBlob(waypoint.id);
       if (!audioBlob && waypoint.audio_file) {
         audioBlob = await getStoredAudioBlob(waypoint.audio_file);
@@ -342,7 +399,10 @@ export class TrailSpatialEngine {
   }
 
   public async testAudio(targetWaypoint?: WaypointTrigger): Promise<void> {
-    const target = targetWaypoint || this.manifest.waypoints[0];
+    const target =
+      targetWaypoint ||
+      this.getActiveTargetWaypoint()?.waypoint ||
+      this.manifest.waypoints[0];
     if (target) {
       await this.playWaypointAudio(target);
     }
