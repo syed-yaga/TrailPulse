@@ -61,6 +61,11 @@ if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
 }
 
+const clientPublic = path.resolve(process.cwd(), 'client/public');
+if (fs.existsSync(clientPublic)) {
+  app.use(express.static(clientPublic));
+}
+
 app.get('/api/health', (_req: Request, res: Response): void => {
   res.json({
     status: 'healthy',

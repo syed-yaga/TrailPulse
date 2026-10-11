@@ -39,6 +39,7 @@ import {
   calculateDistanceMeters,
   type TrailSpatialState,
 } from "./services/geofenceEngine";
+import { SampleTrailsSelector } from "./components/SampleTrailsSelector";
 
 type AppScreenState = "prep" | "generating" | "ready" | "hiking";
 
@@ -161,7 +162,10 @@ export default function App(): React.JSX.Element {
     reader.readAsText(file);
   };
 
-  const handleImportZipBundle = async (file: File): Promise<void> => {
+  const handleImportZipBundle = async (
+    file: File,
+    autoStartHiking: boolean = false,
+  ): Promise<void> => {
     setAppState("generating");
     setGenProgress(20);
     setGenStage("Reading archive in browser...");
@@ -191,7 +195,17 @@ export default function App(): React.JSX.Element {
       setGenStage("Bundle ready! You can now start hiking offline.");
 
       await new Promise((r) => setTimeout(r, 450));
-      setAppState("ready");
+
+      if (autoStartHiking) {
+        // Unlock audio context and immediately engage Live GPS HUD & simulation controls
+        if (engineRef.current) {
+          engineRef.current.unlockAudio();
+          engineRef.current.startTracking();
+        }
+        setAppState("hiking");
+      } else {
+        setAppState("ready");
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to import ZIP bundle.";
@@ -199,6 +213,10 @@ export default function App(): React.JSX.Element {
       setErrorMessage(message);
       setAppState("prep");
     }
+  };
+
+  const handleLoadSampleTrail = async (file: File): Promise<void> => {
+    await handleImportZipBundle(file, true);
   };
 
   const handleZipInputChange = (
@@ -613,6 +631,22 @@ export default function App(): React.JSX.Element {
           <div className="card-title">
             <span>1. Choose Trail Setup</span>
             <Sparkles size={18} color="#4ade80" />
+          </div>
+
+          {/* 1-CLICK CURATED SAMPLE TRAILS (FEATURED FOR JUDGES & CONTRIBUTORS) */}
+          <SampleTrailsSelector onLoadBundleFile={handleLoadSampleTrail} />
+
+          <div
+            style={{
+              textAlign: "center",
+              margin: "0.25rem 0 1rem 0",
+              color: "#64748b",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+            }}
+          >
+            ── OR LOAD CUSTOM TOURS ──
           </div>
 
           {/* PATHWAY 1: IMPORT PRE-GENERATED BUNDLE (100% OFFLINE) */}
