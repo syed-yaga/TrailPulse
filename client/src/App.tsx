@@ -7,7 +7,6 @@ import {
   Play,
   Pause,
   Square,
-  Sparkles,
   UploadCloud,
   CheckCircle2,
   Radio,
@@ -639,7 +638,6 @@ export default function App(): React.JSX.Element {
         <div className="card">
           <div className="card-title">
             <span>1. Choose Trail Setup</span>
-            {/* <Sparkles size={18} color="#4ade80" /> */}
           </div>
 
           {/* 1-CLICK CURATED SAMPLE TRAILS (FEATURED FOR JUDGES & CONTRIBUTORS) */}

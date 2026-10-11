@@ -1,11 +1,5 @@
 import React, { useState } from "react";
-import {
-  MapPin,
-  Navigation,
-  Loader2,
-  ArrowRight,
-  Sparkles,
-} from "lucide-react";
+import { MapPin, Navigation, Loader2, ArrowRight } from "lucide-react";
 import { SAMPLE_TRAILS, type SampleTrail } from "../data/sampleTrails";
 
 export interface SampleTrailsSelectorProps {
@@ -59,7 +53,6 @@ export const SampleTrailsSelector: React.FC<SampleTrailsSelectorProps> = ({
     <div className="sample-trails-container">
       <div className="sample-trails-header">
         <div className="sample-trails-title">
-          <Sparkles size={18} className="text-amber-400" />
           <span>Curated 1-Click Demo Trails</span>
           <span className="sample-trials-badge-fast">60s TEST</span>
         </div>
