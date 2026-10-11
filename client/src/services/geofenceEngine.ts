@@ -1,5 +1,9 @@
-import type { Coordinate, TrailManifest, WaypointTrigger } from '../../../shared/types';
-import { getStoredAudioBlob } from './zipService';
+import type {
+  Coordinate,
+  TrailManifest,
+  WaypointTrigger,
+} from "../../../shared/types";
+import { getStoredAudioBlob } from "./zipService";
 
 /**
  * Calculates Haversine distance in meters between two latitude/longitude points.
@@ -8,7 +12,7 @@ export function calculateDistanceMeters(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ): number {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -47,10 +51,6 @@ export interface TrailSpatialState {
 
 export type StateListener = (state: TrailSpatialState) => void;
 
-/**
- * TrailSpatialEngine
- * Manages satellite GPS tracking, proximity geofence checking, and MediaSession audio playback.
- */
 export class TrailSpatialEngine {
   private manifest: TrailManifest;
   private options: Required<SpatialEngineOptions>;
@@ -70,11 +70,11 @@ export class TrailSpatialEngine {
     this.manifest = manifest;
     this.options = {
       defaultTriggerRadius: options.defaultTriggerRadius ?? 40,
-      cooldownMs: options.cooldownMs ?? 600_000
+      cooldownMs: options.cooldownMs ?? 600_000,
     };
 
     this.audioElement = new Audio();
-    this.audioElement.preload = 'auto';
+    this.audioElement.preload = "auto";
 
     this.setupAudioListeners();
     this.setupMediaSessionHandlers();
@@ -89,14 +89,16 @@ export class TrailSpatialEngine {
   public getState(): TrailSpatialState {
     const targetInfo = this.getActiveTargetWaypoint();
     const targetWp = targetInfo ? targetInfo.waypoint : null;
-    const distanceToTarget = targetInfo && this.currentPosition ? targetInfo.distance : null;
+    const distanceToTarget =
+      targetInfo && this.currentPosition ? targetInfo.distance : null;
 
     const rawRadius = targetWp
-      ? (targetWp.trigger_radius_meters ?? (targetWp as any).radius ?? this.options.defaultTriggerRadius)
+      ? (targetWp.trigger_radius_meters ??
+        (targetWp as any).radius ??
+        this.options.defaultTriggerRadius)
       : this.options.defaultTriggerRadius;
     const triggerRadiusMeters = Math.max(rawRadius, 40);
 
-    // Proximity Trigger Condition MUST be: distance <= radius on an unvisited target
     const isInsideRadius = !!(
       targetWp &&
       distanceToTarget !== null &&
@@ -122,7 +124,7 @@ export class TrailSpatialEngine {
       lastTriggerTimes: new Map(this.lastTriggerTimes),
       visitedWaypointIds: new Set(this.visitedWaypointIds),
       isTargetCompleted: isAllCompleted,
-      isSimulating: this.isSimulating
+      isSimulating: this.isSimulating,
     };
   }
 
@@ -132,23 +134,23 @@ export class TrailSpatialEngine {
       try {
         listener(state);
       } catch (err: unknown) {
-        console.error('[TrailSpatialEngine] Listener error:', err);
+        console.error("[TrailSpatialEngine] Listener error:", err);
       }
     }
   }
 
   private setupAudioListeners(): void {
-    this.audioElement.addEventListener('play', () => {
+    this.audioElement.addEventListener("play", () => {
       this.isPlaying = true;
       this.notify();
     });
 
-    this.audioElement.addEventListener('pause', () => {
+    this.audioElement.addEventListener("pause", () => {
       this.isPlaying = false;
       this.notify();
     });
 
-    this.audioElement.addEventListener('ended', () => {
+    this.audioElement.addEventListener("ended", () => {
       this.isPlaying = false;
       this.currentPlayingWaypoint = null;
       if (this.currentAudioUrl) {
@@ -158,8 +160,8 @@ export class TrailSpatialEngine {
       this.notify();
     });
 
-    this.audioElement.addEventListener('error', (e: Event) => {
-      console.error('[TrailSpatialEngine] Audio playback error:', e);
+    this.audioElement.addEventListener("error", (e: Event) => {
+      console.error("[TrailSpatialEngine] Audio playback error:", e);
       this.isPlaying = false;
       this.currentPlayingWaypoint = null;
       this.notify();
@@ -167,31 +169,29 @@ export class TrailSpatialEngine {
   }
 
   private setupMediaSessionHandlers(): void {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.setActionHandler('play', () => {
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.setActionHandler("play", () => {
         this.audioElement.play().catch(console.error);
       });
-      navigator.mediaSession.setActionHandler('pause', () => {
+      navigator.mediaSession.setActionHandler("pause", () => {
         this.audioElement.pause();
       });
       try {
-        navigator.mediaSession.setActionHandler('stop', () => {
+        navigator.mediaSession.setActionHandler("stop", () => {
           this.audioElement.pause();
           this.audioElement.currentTime = 0;
           this.isPlaying = false;
           this.currentPlayingWaypoint = null;
           this.notify();
         });
-      } catch {
-        // Not all platforms support 'stop'
-      }
+      } catch {}
     }
   }
 
   public unlockAudio(): void {
     try {
       const silentDataUri =
-        'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
       this.audioElement.src = silentDataUri;
       const playPromise = this.audioElement.play();
       if (playPromise !== undefined) {
@@ -201,11 +201,11 @@ export class TrailSpatialEngine {
             this.audioElement.currentTime = 0;
           })
           .catch((err) => {
-            console.warn('[TrailSpatialEngine] Audio unlock note:', err);
+            console.warn("[TrailSpatialEngine] Audio unlock note:", err);
           });
       }
     } catch (e) {
-      console.warn('[TrailSpatialEngine] Error unlocking audio:', e);
+      console.warn("[TrailSpatialEngine] Error unlocking audio:", e);
     }
   }
 
@@ -213,8 +213,8 @@ export class TrailSpatialEngine {
     this.isSimulating = false;
     this.unlockAudio();
 
-    if (!('geolocation' in navigator)) {
-      console.warn('[TrailSpatialEngine] Geolocation API not available.');
+    if (!("geolocation" in navigator)) {
+      console.warn("[TrailSpatialEngine] Geolocation API not available.");
       return;
     }
 
@@ -227,7 +227,10 @@ export class TrailSpatialEngine {
         this.currentPosition = {
           lat: position.coords.latitude,
           lon: position.coords.longitude,
-          elevation: position.coords.altitude !== null ? position.coords.altitude : undefined
+          elevation:
+            position.coords.altitude !== null
+              ? position.coords.altitude
+              : undefined,
         };
         this.accuracyMeters = Math.round(position.coords.accuracy);
 
@@ -235,13 +238,15 @@ export class TrailSpatialEngine {
         this.notify();
       },
       (error: GeolocationPositionError) => {
-        console.warn(`[TrailSpatialEngine] Geolocation error (${error.code}): ${error.message}`);
+        console.warn(
+          `[TrailSpatialEngine] Geolocation error (${error.code}): ${error.message}`,
+        );
       },
       {
         enableHighAccuracy: true,
         maximumAge: 3000,
-        timeout: 10000
-      }
+        timeout: 10000,
+      },
     );
   }
 
@@ -257,7 +262,11 @@ export class TrailSpatialEngine {
     }
   }
 
-  public simulatePosition(lat: number, lon: number, accuracy: number = 4): void {
+  public simulatePosition(
+    lat: number,
+    lon: number,
+    accuracy: number = 4,
+  ): void {
     this.isSimulating = true;
     this.currentPosition = { lat, lon };
     this.accuracyMeters = accuracy;
@@ -265,14 +274,16 @@ export class TrailSpatialEngine {
     this.notify();
   }
 
-  public getActiveTargetWaypoint(): { waypoint: WaypointTrigger; distance: number } | null {
+  public getActiveTargetWaypoint(): {
+    waypoint: WaypointTrigger;
+    distance: number;
+  } | null {
     if (!this.manifest.waypoints || this.manifest.waypoints.length === 0) {
       return null;
     }
 
-    // Target the first unvisited waypoint in trail sequence to measure approach instead of departure
     const unvisited = this.manifest.waypoints.filter(
-      (wp) => !this.visitedWaypointIds.has(wp.id)
+      (wp) => !this.visitedWaypointIds.has(wp.id),
     );
     const target = unvisited.length > 0 ? unvisited[0] : null;
 
@@ -285,14 +296,17 @@ export class TrailSpatialEngine {
           this.currentPosition.lat,
           this.currentPosition.lon,
           target.lat,
-          target.lon
+          target.lon,
         )
       : 0;
 
     return { waypoint: target, distance };
   }
 
-  public getNearestWaypoint(): { waypoint: WaypointTrigger; distance: number } | null {
+  public getNearestWaypoint(): {
+    waypoint: WaypointTrigger;
+    distance: number;
+  } | null {
     return this.getActiveTargetWaypoint();
   }
 
@@ -316,9 +330,9 @@ export class TrailSpatialEngine {
     if (this.isPlaying) return;
 
     const now = Date.now();
-    // Only evaluate unvisited waypoints so past waypoints are not re-triggered
+
     const unvisited = this.manifest.waypoints.filter(
-      (wp) => !this.visitedWaypointIds.has(wp.id)
+      (wp) => !this.visitedWaypointIds.has(wp.id),
     );
 
     for (const wp of unvisited) {
@@ -326,19 +340,20 @@ export class TrailSpatialEngine {
         this.currentPosition.lat,
         this.currentPosition.lon,
         wp.lat,
-        wp.lon
+        wp.lon,
       );
 
       const rawRadius =
-        wp.trigger_radius_meters ?? (wp as any).radius ?? this.options.defaultTriggerRadius;
+        wp.trigger_radius_meters ??
+        (wp as any).radius ??
+        this.options.defaultTriggerRadius;
       const radius = Math.max(rawRadius, 40);
       const cooldownMs = (wp.cooldown_seconds ?? 600) * 1000;
       const lastTrigger = this.lastTriggerTimes.get(wp.id) ?? 0;
 
-      // Proximity Trigger Condition: distance <= radius on an unvisited target
       if (distance <= radius && now - lastTrigger > cooldownMs) {
         console.log(
-          `[TrailSpatialEngine] Triggering "${wp.name}" (${distance}m <= ${radius}m threshold)`
+          `[TrailSpatialEngine] Triggering "${wp.name}" (${distance}m <= ${radius}m threshold)`,
         );
         this.visitedWaypointIds.add(wp.id);
         this.lastTriggerTimes.set(wp.id, now);
@@ -359,7 +374,9 @@ export class TrailSpatialEngine {
       }
 
       if (!audioBlob) {
-        console.warn(`[TrailSpatialEngine] No cached audio for waypoint ${waypoint.id}`);
+        console.warn(
+          `[TrailSpatialEngine] No cached audio for waypoint ${waypoint.id}`,
+        );
         return;
       }
 
@@ -371,27 +388,27 @@ export class TrailSpatialEngine {
       this.audioElement.src = this.currentAudioUrl;
       this.currentPlayingWaypoint = waypoint;
 
-      if ('mediaSession' in navigator) {
+      if ("mediaSession" in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: waypoint.name,
-          artist: this.manifest.trail_name || 'TrailPulse',
-          album: 'TrailPulse Outdoors',
+          artist: this.manifest.trail_name || "TrailPulse",
+          album: "TrailPulse Outdoors",
           artwork: [
             {
               src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="%234ade80"><circle cx="48" cy="48" r="44" fill="%230f2d1e"/><path d="M48 24 L28 64 L48 56 L68 64 Z" fill="%234ade80"/></svg>',
-              sizes: '96x96',
-              type: 'image/svg+xml'
-            }
-          ]
+              sizes: "96x96",
+              type: "image/svg+xml",
+            },
+          ],
         });
-        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.playbackState = "playing";
       }
 
       await this.audioElement.play();
       this.isPlaying = true;
       this.notify();
     } catch (err: unknown) {
-      console.error('[TrailSpatialEngine] Audio playback error:', err);
+      console.error("[TrailSpatialEngine] Audio playback error:", err);
       this.isPlaying = false;
       this.currentPlayingWaypoint = null;
       this.notify();
@@ -427,5 +444,4 @@ export class TrailSpatialEngine {
   }
 }
 
-// Backward-compatible alias
 export { TrailSpatialEngine as GeofenceEngine };

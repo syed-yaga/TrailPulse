@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Compass,
   Headphones,
-  MapPin,
   Volume2,
   Play,
   Pause,
@@ -25,7 +24,6 @@ import type {
   TrailManifest,
   WaypointTrigger,
 } from "../../shared/types";
-import { MUIR_WOODS_GPX } from "./data/muirWoodsSample";
 import {
   unpackAndStoreBundle,
   getCachedManifest,
@@ -47,16 +45,13 @@ export default function App(): React.JSX.Element {
   const [manifest, setManifest] = useState<TrailManifest | null>(null);
   const [_currentCoord, setCurrentCoord] = useState<Coordinate | null>(null);
   const [gpxData, setGpxData] = useState<string | null>(null);
-  const [trailName, setTrailName] = useState<string>(
-    "Muir Woods Redwood Sanctuary Trail",
-  );
+  const [trailName, setTrailName] = useState<string>("Custom Trail");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);
 
   const [genProgress, setGenProgress] = useState<number>(0);
   const [genStage, setGenStage] = useState<string>("");
 
-  // Manual Preview State & Refs
   const [currentlyPlayingId, setCurrentlyPlayingId] = useState<string | null>(
     null,
   );
@@ -119,7 +114,7 @@ export default function App(): React.JSX.Element {
         engineRef.current.destroy();
       }
       activeAudio.pause();
-      // Revoke created audio object URLs
+
       for (const url of audioCacheRef.current.values()) {
         URL.revokeObjectURL(url);
       }
@@ -140,12 +135,6 @@ export default function App(): React.JSX.Element {
       return () => unsubscribe();
     }
   }, [manifest]);
-
-  const handleLoadSample = (): void => {
-    setGpxData(MUIR_WOODS_GPX);
-    setTrailName("Muir Woods Redwood Sanctuary Trail");
-    setErrorMessage(null);
-  };
 
   const handleGpxUpload = (file: File): void => {
     const reader = new FileReader();
@@ -186,7 +175,6 @@ export default function App(): React.JSX.Element {
       setTrailName(unpackedManifest.trail_name);
       setZipBlob(file);
 
-      // Pre-populate memory audio URL cache for immediate playback
       if (unpackedManifest.audioBlobs) {
         for (const [key, blob] of unpackedManifest.audioBlobs.entries()) {
           const url = URL.createObjectURL(blob);
@@ -200,7 +188,6 @@ export default function App(): React.JSX.Element {
       await new Promise((r) => setTimeout(r, 450));
 
       if (autoStartHiking) {
-        // Unlock audio context and immediately engage Live GPS HUD & simulation controls
         if (engineRef.current) {
           engineRef.current.unlockAudio();
           engineRef.current.startTracking();
@@ -241,7 +228,11 @@ export default function App(): React.JSX.Element {
   };
 
   const handleGenerateBundle = async (): Promise<void> => {
-    const payloadGpx = gpxData || MUIR_WOODS_GPX;
+    if (!gpxData) {
+      setErrorMessage("Please select or upload a valid .gpx route file first.");
+      return;
+    }
+    const payloadGpx = gpxData;
     setAppState("generating");
     setGenProgress(15);
     setGenStage(
@@ -298,7 +289,6 @@ export default function App(): React.JSX.Element {
       setManifest(unpackedManifest);
       setTrailName(unpackedManifest.trail_name);
 
-      // Pre-populate memory audio URL cache for immediate playback
       for (const [key, blob] of audioBlobs.entries()) {
         const url = URL.createObjectURL(blob);
         audioCacheRef.current.set(key, url);
@@ -318,11 +308,7 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  /**
-   * Manual Test Play / Audio Preview Handler
-   */
   const handleManualPlay = async (wp: WaypointTrigger): Promise<void> => {
-    // If the clicked waypoint is already playing, toggle pause
     if (currentlyPlayingId === wp.id && !activeAudioRef.current.paused) {
       activeAudioRef.current.pause();
       setCurrentlyPlayingId(null);
@@ -330,12 +316,10 @@ export default function App(): React.JSX.Element {
       return;
     }
 
-    // Stop engine playback if active
     if (engineRef.current) {
       engineRef.current.stopAudio();
     }
 
-    // Resolve audio URL from RAM cache or IndexedDB
     let audioUrl =
       audioCacheRef.current.get(wp.audio_file) ||
       audioCacheRef.current.get(wp.id);
@@ -380,9 +364,6 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  /**
-   * Global Stop Audio Handler
-   */
   const handleStopAudio = (): void => {
     activeAudioRef.current.pause();
     activeAudioRef.current.currentTime = 0;
@@ -394,16 +375,12 @@ export default function App(): React.JSX.Element {
     }
   };
 
-  /**
-   * Test Play / Audio Preview Handler for Active Hiking View
-   */
   const handleTestPlayAudio = async (): Promise<void> => {
     if (!manifest) {
       setPreviewStatus("No trail manifest loaded.");
       return;
     }
 
-    // Toggle pause if already playing
     if (isPlayingTestAudio && !activeAudioRef.current.paused) {
       activeAudioRef.current.pause();
       setIsPlayingTestAudio(false);
@@ -411,12 +388,10 @@ export default function App(): React.JSX.Element {
       return;
     }
 
-    // Stop engine playback if active
     if (engineRef.current) {
       engineRef.current.stopAudio();
     }
 
-    // Target current active waypoint or default to waypoint 1
     const targetWaypoint: WaypointTrigger | undefined =
       spatialState.targetWaypoint ||
       spatialState.nearestWaypoint ||
@@ -432,7 +407,6 @@ export default function App(): React.JSX.Element {
       audioCacheRef.current.get(targetWaypoint.audio_file) ||
       audioCacheRef.current.get(targetWaypoint.id);
 
-    // Fallback to IndexedDB if memory map lost reference
     if (!audioUrl) {
       const storedBlob =
         (await get<Blob>(targetWaypoint.audio_file)) ||
@@ -463,7 +437,6 @@ export default function App(): React.JSX.Element {
       setActivePoi(targetWaypoint.name);
       setPreviewStatus(`Playing: ${targetWaypoint.name}`);
 
-      // Update MediaSession for Bluetooth earbuds / lock screen
       if ("mediaSession" in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: targetWaypoint.name,
@@ -481,8 +454,6 @@ export default function App(): React.JSX.Element {
   const handleStartHiking = (): void => {
     handleStopAudio();
 
-    // 1. Audio Autoplay Unlock: Immediately play and pause a silent audio buffer
-    // to unlock HTML5 audio permissions for future background triggers on mobile.
     const silentWavUri =
       "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
@@ -505,7 +476,6 @@ export default function App(): React.JSX.Element {
       }
     }
 
-    // Unlock engine internal audio and start satellite tracking (no premature simulation)
     if (engineRef.current) {
       engineRef.current.unlockAudio();
       engineRef.current.startTracking();
@@ -575,7 +545,6 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="app-container">
-      {/* Header */}
       <header className="app-header">
         <div className="brand">
           <div className="brand-icon">
@@ -602,7 +571,6 @@ export default function App(): React.JSX.Element {
         </div>
       </header>
 
-      {/* Main Philosophy Banner */}
       <div className="philosophy-banner">
         <div className="icon-box">
           <EyeOff size={20} />
@@ -633,14 +601,12 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* STATE 1: PREPARATION & UPLOAD */}
       {appState === "prep" && (
         <div className="card">
           <div className="card-title">
             <span>1. Choose Trail Setup</span>
           </div>
 
-          {/* 1-CLICK CURATED SAMPLE TRAILS (FEATURED FOR JUDGES & CONTRIBUTORS) */}
           <SampleTrailsSelector onLoadBundleFile={handleLoadSampleTrail} />
 
           <div
@@ -656,7 +622,6 @@ export default function App(): React.JSX.Element {
             ── OR LOAD CUSTOM TOURS ──
           </div>
 
-          {/* PATHWAY 1: IMPORT PRE-GENERATED BUNDLE (100% OFFLINE) */}
           <div
             style={{
               background: "rgba(74, 222, 128, 0.05)",
@@ -731,7 +696,6 @@ export default function App(): React.JSX.Element {
             ── OR CREATE NEW FROM GPX ──
           </div>
 
-          {/* PATHWAY 2: CREATE NEW TRAIL (.gpx) */}
           <div
             className="upload-zone"
             onClick={() => gpxInputRef.current?.click()}
@@ -774,26 +738,11 @@ export default function App(): React.JSX.Element {
             </p>
           </div>
 
-          <div
-            style={{
-              textAlign: "center",
-              margin: "0.65rem 0",
-              color: "#94a3b8",
-              fontSize: "0.8rem",
-            }}
-          >
-            — OR QUICK TEST WITH SAMPLE ROUTE —
-          </div>
-
-          <button className="btn btn-secondary" onClick={handleLoadSample}>
-            <MapPin size={18} color="#4ade80" />
-            Load Sample: Muir Woods Redwood Trail (CA)
-          </button>
-
-          <div className="btn-group" style={{ marginTop: "0.85rem" }}>
+          <div className="btn-group" style={{ marginTop: "1rem" }}>
             <button
               className="btn btn-primary btn-large"
               onClick={handleGenerateBundle}
+              disabled={!gpxData}
             >
               Generate Trail Bundle
             </button>
@@ -801,7 +750,6 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* STATE 2: GENERATING BUNDLE */}
       {appState === "generating" && (
         <div className="card">
           <div className="card-title">
@@ -857,7 +805,6 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* STATE 3: READY TO HIKE & AUDIO PREVIEW CONTROLS */}
       {appState === "ready" && manifest && (
         <div className="card">
           <div className="card-title">
@@ -893,7 +840,6 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Primary Outdoor Action Button */}
           <div className="btn-group" style={{ marginBottom: "1.5rem" }}>
             <button
               className="btn btn-primary btn-large"
@@ -915,7 +861,6 @@ export default function App(): React.JSX.Element {
             </p>
           </div>
 
-          {/* DEDICATED AUDIO TOUR PREVIEW SECTION */}
           <div className="preview-section">
             <div className="preview-header">
               <span
@@ -936,7 +881,6 @@ export default function App(): React.JSX.Element {
               </span>
             </div>
 
-            {/* Active Status Banner */}
             <div
               className={`preview-status-banner ${currentlyPlayingId ? "active" : ""}`}
             >
@@ -960,7 +904,6 @@ export default function App(): React.JSX.Element {
               )}
             </div>
 
-            {/* Waypoint Preview Cards */}
             <div
               style={{
                 display: "flex",
@@ -1032,7 +975,6 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Secondary Backup & Reset Actions */}
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
             {zipBlob && (
               <button
@@ -1054,7 +996,6 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* STATE 4: POCKET MODE / ACTIVE HIKE HUD */}
       {appState === "hiking" && (
         <div className="pocket-mode">
           <div className="screen-off-prompt">
@@ -1082,7 +1023,6 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
 
-          {/* STICKY LIVE GPS DEBUG HUD */}
           <div className="debug-hud">
             <div className="hud-header">
               <div className="hud-title-badge">
@@ -1203,7 +1143,6 @@ export default function App(): React.JSX.Element {
             </div>
           </div>
 
-          {/* Currently Playing / Last Triggered Story Card */}
           {manifest &&
             (spatialState.currentPlayingWaypoint ||
               (isPlayingTestAudio && manifest.waypoints.length > 0)) && (
@@ -1249,7 +1188,6 @@ export default function App(): React.JSX.Element {
               </div>
             )}
 
-          {/* Control Buttons */}
           <div
             style={{
               width: "100%",
@@ -1293,7 +1231,6 @@ export default function App(): React.JSX.Element {
             </button>
           </div>
 
-          {/* Virtual Hiker / GPS Simulator Panel */}
           {showSimPanel && manifest && (
             <div className="sim-panel">
               <h4>
@@ -1339,7 +1276,6 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* Footer */}
       <footer className="app-footer">
         <p>TrailPulse • Built for Hacktoberfest 2026 "Touch Grass" Challenge</p>
         <p style={{ marginTop: "0.2rem" }}>

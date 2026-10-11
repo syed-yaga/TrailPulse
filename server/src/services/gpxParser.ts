@@ -1,11 +1,11 @@
-import { DOMParser } from '@xmldom/xmldom';
-import * as toGeoJSON from '@tmcw/togeojson';
-import type { Coordinate } from '../../../shared/types.js';
+import { DOMParser } from "@xmldom/xmldom";
+import * as toGeoJSON from "@tmcw/togeojson";
+import type { Coordinate } from "../../../shared/types.js";
 
 export interface SampledWaypointCoordinate {
   id: string;
   step: number;
-  role: 'Trailhead' | 'Terminus' | 'Peak' | 'Valley' | 'Waypoint';
+  role: "Trailhead" | "Terminus" | "Peak" | "Valley" | "Waypoint";
   defaultName: string;
   coordinate: Coordinate;
   distanceAlongTrailMeters: number;
@@ -19,10 +19,10 @@ export interface ParsedTrailResult {
   sampledWaypoints: SampledWaypointCoordinate[];
 }
 
-/**
- * Calculates Haversine distance in meters between two [lon, lat] coordinate tuples.
- */
-export function haversineDistanceMeters(coord1: [number, number], coord2: [number, number]): number {
+export function haversineDistanceMeters(
+  coord1: [number, number],
+  coord2: [number, number],
+): number {
   const [lon1, lat1] = coord1;
   const [lon2, lat2] = coord2;
 
@@ -39,19 +39,22 @@ export function haversineDistanceMeters(coord1: [number, number], coord2: [numbe
   return R * c;
 }
 
-/**
- * Recursively extracts coordinate tuples from GeoJSON geometry coordinates.
- */
-function extractCoordinateTuples(raw: unknown): Array<[number, number, number | undefined]> {
+function extractCoordinateTuples(
+  raw: unknown,
+): Array<[number, number, number | undefined]> {
   const result: Array<[number, number, number | undefined]> = [];
 
   function traverse(item: unknown): void {
     if (!Array.isArray(item)) return;
 
-    if (item.length >= 2 && typeof item[0] === 'number' && typeof item[1] === 'number') {
+    if (
+      item.length >= 2 &&
+      typeof item[0] === "number" &&
+      typeof item[1] === "number"
+    ) {
       const lon = item[0] as number;
       const lat = item[1] as number;
-      const ele = typeof item[2] === 'number' ? (item[2] as number) : undefined;
+      const ele = typeof item[2] === "number" ? (item[2] as number) : undefined;
       result.push([lon, lat, ele]);
     } else {
       for (const sub of item) {
@@ -64,16 +67,15 @@ function extractCoordinateTuples(raw: unknown): Array<[number, number, number | 
   return result;
 }
 
-/**
- * Parses GPX text into coordinates and extracts 3 to 6 key spatial waypoints.
- */
-export function parseGPXAndSampleWaypoints(gpxXmlString: string): ParsedTrailResult {
+export function parseGPXAndSampleWaypoints(
+  gpxXmlString: string,
+): ParsedTrailResult {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(gpxXmlString, 'application/xml');
+  const doc = parser.parseFromString(gpxXmlString, "application/xml");
   const geojson = toGeoJSON.gpx(doc);
 
-  let trailName = 'Walking Route';
-  const nameNodes = doc.getElementsByTagName('name');
+  let trailName = "Walking Route";
+  const nameNodes = doc.getElementsByTagName("name");
   if (nameNodes && nameNodes.length > 0 && nameNodes[0]?.textContent) {
     trailName = nameNodes[0].textContent.trim();
   }
@@ -87,14 +89,18 @@ export function parseGPXAndSampleWaypoints(gpxXmlString: string): ParsedTrailRes
   }
 
   if (rawTuples.length < 2) {
-    throw new Error('GPX contains insufficient track points (minimum 2 required).');
+    throw new Error(
+      "GPX contains insufficient track points (minimum 2 required).",
+    );
   }
 
-  const allCoordinates: Coordinate[] = rawTuples.map(([lon, lat, elevation]) => ({
-    lat,
-    lon,
-    elevation
-  }));
+  const allCoordinates: Coordinate[] = rawTuples.map(
+    ([lon, lat, elevation]) => ({
+      lat,
+      lon,
+      elevation,
+    }),
+  );
 
   const cumulativeDistances: number[] = [0];
   let totalDistanceMeters = 0;
@@ -121,7 +127,10 @@ export function parseGPXAndSampleWaypoints(gpxXmlString: string): ParsedTrailRes
     }
 
     if (i > 0) {
-      const prevCoord: [number, number] = [rawTuples[i - 1][0], rawTuples[i - 1][1]];
+      const prevCoord: [number, number] = [
+        rawTuples[i - 1][0],
+        rawTuples[i - 1][1],
+      ];
       const currCoord: [number, number] = [rawTuples[i][0], rawTuples[i][1]];
       const segDist = haversineDistanceMeters(prevCoord, currCoord);
       totalDistanceMeters += segDist;
@@ -136,7 +145,12 @@ export function parseGPXAndSampleWaypoints(gpxXmlString: string): ParsedTrailRes
   if (hasElevation && maxEleIdx !== 0 && maxEleIdx !== rawTuples.length - 1) {
     candidateIndices.add(maxEleIdx);
   }
-  if (hasElevation && minEleIdx !== 0 && minEleIdx !== rawTuples.length - 1 && minEleIdx !== maxEleIdx) {
+  if (
+    hasElevation &&
+    minEleIdx !== 0 &&
+    minEleIdx !== rawTuples.length - 1 &&
+    minEleIdx !== maxEleIdx
+  ) {
     candidateIndices.add(minEleIdx);
   }
 
@@ -162,10 +176,19 @@ export function parseGPXAndSampleWaypoints(gpxXmlString: string): ParsedTrailRes
   for (let i = 1; i < sortedIndices.length; i++) {
     const currentIdx = sortedIndices[i];
     const prevSelectedIdx = selectedIndices[selectedIndices.length - 1];
-    const distBetween = Math.abs(cumulativeDistances[currentIdx] - cumulativeDistances[prevSelectedIdx]);
+    const distBetween = Math.abs(
+      cumulativeDistances[currentIdx] - cumulativeDistances[prevSelectedIdx],
+    );
 
-    if (distBetween >= minSeparationMeters || currentIdx === rawTuples.length - 1) {
-      if (currentIdx === rawTuples.length - 1 && distBetween < minSeparationMeters && selectedIndices.length > 1) {
+    if (
+      distBetween >= minSeparationMeters ||
+      currentIdx === rawTuples.length - 1
+    ) {
+      if (
+        currentIdx === rawTuples.length - 1 &&
+        distBetween < minSeparationMeters &&
+        selectedIndices.length > 1
+      ) {
         selectedIndices[selectedIndices.length - 1] = currentIdx;
       } else {
         selectedIndices.push(currentIdx);
@@ -191,47 +214,50 @@ export function parseGPXAndSampleWaypoints(gpxXmlString: string): ParsedTrailRes
     finalIndices.splice(1, 0, midIdx);
   }
 
-  const sampledWaypoints: SampledWaypointCoordinate[] = finalIndices.map((idx, stepIndex) => {
-    const tuple = rawTuples[idx];
-    const lon = tuple[0];
-    const lat = tuple[1];
-    const ele = tuple[2] !== undefined ? Math.round(tuple[2]) : undefined;
-    const distanceMeters = Math.round(cumulativeDistances[idx]);
+  const sampledWaypoints: SampledWaypointCoordinate[] = finalIndices.map(
+    (idx, stepIndex) => {
+      const tuple = rawTuples[idx];
+      const lon = tuple[0];
+      const lat = tuple[1];
+      const ele = tuple[2] !== undefined ? Math.round(tuple[2]) : undefined;
+      const distanceMeters = Math.round(cumulativeDistances[idx]);
 
-    let role: 'Trailhead' | 'Terminus' | 'Peak' | 'Valley' | 'Waypoint' = 'Waypoint';
-    let defaultName = `${trailName} - Waypoint ${stepIndex + 1}`;
+      let role: "Trailhead" | "Terminus" | "Peak" | "Valley" | "Waypoint" =
+        "Waypoint";
+      let defaultName = `${trailName} - Waypoint ${stepIndex + 1}`;
 
-    if (idx === 0) {
-      role = 'Trailhead';
-      defaultName = `${trailName} - Start Point`;
-    } else if (idx === rawTuples.length - 1) {
-      role = 'Terminus';
-      defaultName = `${trailName} - End Point`;
-    } else if (idx === maxEleIdx && hasElevation && maxEle - minEle > 35) {
-      role = 'Peak';
-      defaultName = `${trailName} - Elevated View (${ele}m)`;
-    } else if (idx === minEleIdx && hasElevation && maxEle - minEle > 35) {
-      role = 'Valley';
-      defaultName = `${trailName} - Dip (${ele}m)`;
-    } else {
-      defaultName = `${trailName} - Waypoint ${stepIndex + 1}`;
-    }
+      if (idx === 0) {
+        role = "Trailhead";
+        defaultName = `${trailName} - Start Point`;
+      } else if (idx === rawTuples.length - 1) {
+        role = "Terminus";
+        defaultName = `${trailName} - End Point`;
+      } else if (idx === maxEleIdx && hasElevation && maxEle - minEle > 35) {
+        role = "Peak";
+        defaultName = `${trailName} - Elevated View (${ele}m)`;
+      } else if (idx === minEleIdx && hasElevation && maxEle - minEle > 35) {
+        role = "Valley";
+        defaultName = `${trailName} - Dip (${ele}m)`;
+      } else {
+        defaultName = `${trailName} - Waypoint ${stepIndex + 1}`;
+      }
 
-    return {
-      id: `wp_${stepIndex + 1}`,
-      step: stepIndex + 1,
-      role,
-      defaultName,
-      coordinate: { lat, lon, elevation: ele },
-      distanceAlongTrailMeters: distanceMeters
-    };
-  });
+      return {
+        id: `wp_${stepIndex + 1}`,
+        step: stepIndex + 1,
+        role,
+        defaultName,
+        coordinate: { lat, lon, elevation: ele },
+        distanceAlongTrailMeters: distanceMeters,
+      };
+    },
+  );
 
   return {
     trailName,
     totalDistanceKm: Number((totalDistanceMeters / 1000).toFixed(2)),
     totalDistanceMeters: Math.round(totalDistanceMeters),
     allCoordinates,
-    sampledWaypoints
+    sampledWaypoints,
   };
 }
