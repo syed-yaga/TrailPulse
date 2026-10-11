@@ -900,7 +900,7 @@ export default function App(): React.JSX.Element {
               onClick={handleStartHiking}
             >
               <Headphones size={22} />
-              Start Hiking (Screen Off)
+              Start Walk
             </button>
             <p
               style={{

@@ -1,16 +1,17 @@
-# 🌲 TrailPulse — Offline-First Nature Audio Guide
+# TrailPulse — Offline-First Nature Audio Guide
 
 > **"Touch Grass, Screen Off"**: A zero-screen-time nature audio guide for Hacktoberfest 2026. Hikers prepare a trail tour at home, then hike with their phone locked in their pocket while spatial background GPS triggers ambient naturalist audio vignettes directly through wireless earbuds.
 
 [![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-2026%20Touch%20Grass-brightgreen)](https://hacktoberfest.com/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-trailpulse.onrender.com-10b981?style=for-the-badge&logo=render)](https://trailpulse.onrender.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![PWA Ready](https://img.shields.io/badge/PWA-100%25%20Offline%20Ready-green)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
-[![Open Weights: Gemma 2](https://img.shields.io/badge/AI-Gemma%202%20(9B)-blue)](https://ai.google.dev/gemma)
+[![Open Weights: Gemma 2](<https://img.shields.io/badge/AI-Gemma%202%20(9B)-blue>)](https://ai.google.dev/gemma)
 [![Audio: ElevenLabs](https://img.shields.io/badge/Audio-ElevenLabs%20TTS-orange)](https://elevenlabs.io)
 
 ---
 
-## 🏔️ The Philosophy: "Zero Screen-Time Outdoors"
+## The Philosophy: "Zero Screen-Time Outdoors"
 
 Modern outdoor technology suffers from a paradox: apps intended to enhance time in nature (plant identifiers, digital maps, peak finders) pull the user’s eyes directly toward glass screens. Hikers stop at vistas, open apps, scan menus, and read paragraphs of text while ignoring the physical landscape around them. Furthermore, backcountry recreation frequently occurs in complete cellular dead zones where conventional cloud-hosted AI APIs fail entirely.
 
@@ -53,15 +54,13 @@ Modern outdoor technology suffers from a paradox: apps intended to enhance time 
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-1. **At-Home Trail Preparation**:
-   - Accepts standard `.gpx` tracks (or 1-click built-in *Muir Woods Redwood Sanctuary Trail*).
-   - Samples 3 to 6 key spatial waypoints (trailhead, elevation peaks/valleys, midpoints, terminus).
-   - Queries OpenStreetMap Overpass API for natural and scenic features within 400m.
-   - Generates 45–60 word tactile, sensory naturalist vignettes via **Gemma 2** (strict word count and zero conversational filler).
+1. **At-Home Trail Preparation & 1-Click Curated Demos**:
+   - Accepts standard `.gpx` tracks or 1-click pre-packaged circuits (**Red Fort Quick Tour** & **Humayun's Tomb Garden**).
+   - Generates 30–45s bite-sized, tactile naturalist & heritage vignettes via **Gemma 2** (strict word count and zero conversational filler).
    - Synthesizes narration via **ElevenLabs** (with pure JS PCM WAV fallback tone).
-   - Compiles and streams a compressed `trail_bundle.zip` without intermediate server disk storage.
+   - Compiles and streams a compressed `trail_bundle.zip` unpacked entirely client-side into IndexedDB.
 
 2. **100% Disconnected Offline PWA**:
    - In-memory ZIP extraction via `fflate` into client RAM.
@@ -77,20 +76,19 @@ Modern outdoor technology suffers from a paradox: apps intended to enhance time 
 
 ---
 
-## 📂 Monorepo Architecture
+## Monorepo Architecture
 
 ```
 trailpulse/
 ├── package.json               # Root scripts: install:all, build, start
 ├── server/
 │   ├── package.json           # Backend dependencies
-│   ├── server.js              # Express API & static server
-│   ├── services/
-│   │   ├── gpxParser.js       # GPX to GeoJSON & waypoint sampling
-│   │   ├── overpassService.js # OpenStreetMap Overpass POI query (400m)
-│   │   ├── gemmaService.js    # Local/remote Gemma 2 runner & naturalist fallback
-│   │   └── audioService.js    # ElevenLabs TTS & pure JS PCM WAV synthesizer
-│   └── public/                # Built React PWA static files
+│   ├── server.js              # Express API & serves client/dist in production
+│   └── services/
+│       ├── gpxParser.js       # GPX to GeoJSON & waypoint sampling
+│       ├── overpassService.js # OpenStreetMap Overpass POI query (400m)
+│       ├── gemmaService.js    # Local/remote Gemma 2 runner & naturalist fallback
+│       └── audioService.js    # ElevenLabs TTS & pure JS PCM WAV synthesizer
 └── client/
     ├── package.json           # Frontend dependencies
     ├── vite.config.js         # Configured with vite-plugin-pwa
@@ -100,35 +98,69 @@ trailpulse/
         ├── App.jsx            # Main UI state machine & Pocket Mode HUD
         ├── styles.css         # High-contrast outdoor dark forest theme
         ├── data/
-        │   └── muirWoodsSample.js # Built-in Muir Woods GPX track
+        │   └── sampleTrails.js # Red Fort & Humayun's Tomb 45s demo registry
         └── services/
             ├── zipService.js      # In-memory RAM unzipper & IndexedDB storage
             └── geofenceEngine.js  # Haversine spatial engine & MediaSession player
+
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Test for Evaluators (60s Desk Demo)
+
+No hiking or local environment setup required:
+
+1. Open the **[Live Demo](https://trailpulse.onrender.com/)** on desktop or mobile.
+2. Under **Curated 1-Click Demo Trails**, choose **Red Fort Quick Tour** or **Humayun's Tomb Garden**.
+3. Tap **Load & Explore**.
+4. Tap **GPS Simulator** to simulate the route. Watch the distance drop in the HUD and listen as the entry chime and audio vignette automatically fire within 40m of the landmark.
+
+---
+
+## Quick Start
 
 ### 1. Install Dependencies
+
 ```bash
-npm run install:all
+npm install
 ```
 
-### 2. Build the Client PWA
+### 2. Run Local Development
+
+# Terminal 1 (Frontend):
+
+```bash
+npm run dev:client
+```
+
+### 3. Start the Server
+
+# Terminal 2 (Backend):
+
+```bash
+npm run dev:server
+```
+
+### 4. Production Build & Start
+
+# Builds both client and server workspaces
+
 ```bash
 npm run build
 ```
 
-### 3. Start the Server
+# Starts the compiled production server
+
 ```bash
 npm start
 ```
+
 Open **[http://localhost:3000](http://localhost:3000)** in your browser or mobile device.
 
 ---
 
-## ⚙️ Environment Variables (Optional)
+## Environment Variables (Optional)
 
 Create a `.env` file in `server/` to configure live external APIs:
 
@@ -149,7 +181,7 @@ PORT=3000
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
 Run the automated service and HTTP integration suites:
 
@@ -163,21 +195,22 @@ node server/test-http.js
 
 ---
 
-## 📱 Field Usage Guide
+## Field Usage Guide
 
-1. **Before the Hike (At Home / Wi-Fi)**:
-   - Visit TrailPulse on your phone browser.
-   - Upload your trail `.gpx` or tap **"Load Sample: Muir Woods"**.
-   - Tap **"Generate Trail Bundle"**. The app packages coordinates, POIs, and audio into local IndexedDB.
-2. **At the Trailhead (Airplane Mode)**:
-   - Tap **"Start Hiking (Screen Off)"**.
-   - Plug in wireless earbuds.
-   - Lock your phone and put it in your pocket.
-3. **On the Trail**:
-   - As you enter within 25m of a natural landmark, ambient narration plays automatically.
-   - Tap your earbud to pause or replay.
+1. **Before the Walk (At Home / Wi-Fi)**:
+   - Visit TrailPulse on your mobile browser.
+   - Upload any custom `.gpx` file or tap **"Load & Explore"** on a curated demo trail.
+   - The app unpacks coordinates and audio blobs directly into local IndexedDB.
+2. **At the Trailhead / Landmark**:
+   - Tap **"Start Walk (Screen Off)"**.
+   - Connect wireless earbuds.
+   - Lock your phone and place it in your pocket.
+3. **On the Move**:
+   - As you approach within 25–40m of a landmark, a subtle chime sounds, followed immediately by spatial narration.
+   - Use lock-screen media controls or earbud taps to pause or resume playback.
 
 ---
 
-## 📜 License
+## License
+
 MIT License. Built for Hacktoberfest 2026.
