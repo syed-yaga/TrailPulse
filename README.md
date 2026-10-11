@@ -72,7 +72,7 @@ Modern outdoor technology suffers from a paradox: apps intended to enhance time 
    - Satellite GPS tracking with dynamic Haversine distance calculations.
    - 25m proximity trigger with 10-minute cooldown hysteresis (prevents re-triggering on switchbacks).
    - Full `navigator.mediaSession` integration: displays landmark names on phone lock screens and supports Bluetooth earbud tap controls (play/pause).
-   - Built-in **GPS Simulator (Virtual Hiker)** to test geofence triggers right from the browser.
+   - Built-in **GPS Simulator** to test geofence triggers right from the browser.
 
 ---
 
